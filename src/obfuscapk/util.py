@@ -83,6 +83,11 @@ const_string_pattern = re.compile(
     re.UNICODE,
 )
 
+# Matches instance field assignment instructions in smali files (like iput, iput-object, iput-boolean, etc.)
+iput_pattern = re.compile(r"^\s*iput(?:-[\w]+)?\s+", re.UNICODE)
+
+# .line <line_number>  # Matches source line number debug info in smali files
+line_number_pattern = re.compile(r"^\s*\.line\s+(?P<line_number>\d+)", re.UNICODE)
 
 ########################################################################################
 
