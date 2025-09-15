@@ -89,6 +89,12 @@ iput_pattern = re.compile(r"^\s*iput(?:-[\w]+)?\s+", re.UNICODE)
 # .line <line_number>  # Matches source line number debug info in smali files
 line_number_pattern = re.compile(r"^\s*\.line\s+(?P<line_number>\d+)", re.UNICODE)
 
+# .local var pattern
+local_var_pattern = re.compile(r'\s+\.local\s+(v\d+),')
+
+# '.const* <register>,' pattern
+instruction_register_pattern = re.compile(r"^\s*const[\w/-]*\s+(?P<register>v\d+),", re.UNICODE)
+
 ########################################################################################
 
 
