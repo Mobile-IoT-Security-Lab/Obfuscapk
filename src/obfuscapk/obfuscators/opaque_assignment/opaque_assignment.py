@@ -38,6 +38,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             line.startswith(".method ")
                             and " abstract " not in line
                             and " native " not in line
+                            and " constructor " not in line
                             and not editing_method
                         ):
                             # Entering method.
@@ -118,12 +119,10 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                 opaque_lines.append("\trem-int {0}, {1}, {2}\n".format(v0_label, v0_label, v1_label))
                                 opaque_lines.append("\tif-lez {0}, :{1}\n".format(v0_label, else_label))
                                 # ripristinare evenutali valori dei registri
-                                if local_vars[v0_label]["line"]:
-                                    if local_vars[v0_label]["line"] not in lines:
-                                        lines.append(local_vars[v0_label]["line"])
-                                if local_vars[v1_label]["line"]:
-                                    if local_vars[v1_label]["line"] not in lines:
-                                        lines.append(local_vars[v1_label]["line"]) 
+                                for usable_reg in usable_regs:
+                                    reg_line = local_vars[usable_reg]["line"]
+                                    if usable_reg in line and reg_line not in lines:
+                                        lines.append(local_vars[usable_reg]["line"])
                                 # scriviamo resto del codice
                                 tmp_lines = []
                                 for l in lines:
@@ -133,7 +132,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                         opaque_lines.append(l)
                                 lines = tmp_lines + opaque_lines
                                 lines.append(line) # istruzione iput   
-                                lines.append("\tgoto :{0}\n".format(goto_end_condition_label))
+                                lines.append("\tgoto/32 :{0}\n".format(goto_end_condition_label))
                                 lines.append("\t:{0}\n".format(else_label))
                                 lines.append("\t:{0}\n".format(goto_end_condition_label))
                                 else_label = None
