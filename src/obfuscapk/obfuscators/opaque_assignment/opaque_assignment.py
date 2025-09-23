@@ -6,7 +6,6 @@ from obfuscapk import obfuscator_category
 from obfuscapk import util
 from obfuscapk.obfuscation import Obfuscation
 
-
 class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
     def __init__(self):
         self.logger = logging.getLogger(
@@ -27,18 +26,21 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                     'Inserting opaque variable assignment in file "{0}"'.format(smali_file)
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
+                    # print(f"OFUSCO QUESTO: {smali_path}, check: {"com/example/pickandeat/ManagePlateActivity.smali" not in str(smali_path)}")
                     editing_method = False
                     else_label = None
                     goto_end_condition_label = None
                     lines = []
                     local_count = 0
                     local_vars = {}
+                    obfuscated = False
                     for line in in_file:
                         if (
                             line.startswith(".method ")
                             and " abstract " not in line
                             and " native " not in line
                             and " constructor " not in line
+                            and " protected " not in line
                             and not editing_method
                         ):
                             # Entering method.
@@ -53,6 +55,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             editing_method = False
                             local_count = 0
                             local_vars = {}
+                            obfuscated = False
                         elif editing_method:
                             local_pattern_match = util.locals_pattern.match(line)
                             if local_pattern_match:
@@ -69,7 +72,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                 continue
                             const_var_pattern_match = util.instruction_register_pattern.match(line)
                             if const_var_pattern_match:
-                                local_vars[const_var_pattern_match.group("register")] = {"usable": True, "line": line}
+                                local_vars[const_var_pattern_match.group("register")] = {"usable": False, "line": line}
                             else:
                                 for key in local_vars.keys():
                                     # il registro deve essere nella linea, non deve essere una iput e deve essere usable
@@ -84,7 +87,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             #         # potrei entrarci piu' volte con lo stesso registro perche' puo' venire riutilizzato all'interno del metodo
                             #         local_vars.remove(local_var)
                             var_assignment_match = util.iput_pattern.match(line)
-                            if var_assignment_match:
+                            if var_assignment_match and not obfuscated:
                                 local_var = False
                                 for l in lines:
                                     if l.strip().startswith("."):
@@ -121,7 +124,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                 # ripristinare evenutali valori dei registri
                                 for usable_reg in usable_regs:
                                     reg_line = local_vars[usable_reg]["line"]
-                                    if usable_reg in line and reg_line not in lines:
+                                    if reg_line not in lines:
                                         lines.append(local_vars[usable_reg]["line"])
                                 # scriviamo resto del codice
                                 tmp_lines = []
@@ -137,10 +140,8 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                 lines.append("\t:{0}\n".format(goto_end_condition_label))
                                 else_label = None
                                 goto_end_condition_label = None
+                                obfuscated = True
                             else:
-                                # if line.strip().startswith("."):
-                                #     out_file.write(line)
-                                # else:
                                 lines.append(line)
                         else:
                             out_file.write(line)
