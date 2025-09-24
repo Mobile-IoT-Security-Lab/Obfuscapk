@@ -26,7 +26,6 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                     'Inserting opaque variable assignment in file "{0}"'.format(smali_file)
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
-                    # print(f"OFUSCO QUESTO: {smali_path}, check: {"com/example/pickandeat/ManagePlateActivity.smali" not in str(smali_path)}")
                     editing_method = False
                     else_label = None
                     goto_end_condition_label = None
@@ -46,6 +45,8 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             # Entering method.
                             out_file.write(line)
                             editing_method = True
+                            else_label = []
+                            lines = []
                         elif line.startswith(".end method") and editing_method:
                             # Exiting method.
                             for ln in lines:
@@ -56,6 +57,7 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             local_count = 0
                             local_vars = {}
                             obfuscated = False
+                            else_label = None
                         elif editing_method:
                             local_pattern_match = util.locals_pattern.match(line)
                             if local_pattern_match:
@@ -65,9 +67,17 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                     local_vars[f"v{rx}"] = {"usable": True, "line": ""}                                        
                             line_number_match = util.line_number_pattern.match(line)                         
                             if line_number_match:
-                                for ln in lines:
-                                    out_file.write(ln)
-                                out_file.write(line)
+                                if else_label:
+                                    for ln in lines[:-2]:
+                                        out_file.write(ln)
+                                    out_file.write("\n")
+                                    out_file.write(line)
+                                    out_file.write(lines[-2])
+                                    else_label = None
+                                else:
+                                    for ln in lines:
+                                        out_file.write(ln)
+                                    out_file.write(line)
                                 lines = []
                                 continue
                             const_var_pattern_match = util.instruction_register_pattern.match(line)
@@ -83,16 +93,17 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                             #     # rimuovo il registro che viene utilizzato per memorizzare dati importanti, non lo considero per l'if dell'ofuscatore
                                 local_var = local_var_match.group(1)
                                 local_vars[local_var] = {"usable": False, "line": ""}
-                            #     if local_var in local_vars:
-                            #         # potrei entrarci piu' volte con lo stesso registro perche' puo' venire riutilizzato all'interno del metodo
-                            #         local_vars.remove(local_var)
                             var_assignment_match = util.iput_pattern.match(line)
                             if var_assignment_match and not obfuscated:
-                                local_var = False
+                                forbidden_instruction = False
                                 for l in lines:
-                                    if l.strip().startswith("."):
-                                        local_var = True
-                                if local_var: # se c'e' una variabile .local nella linea dell'iput, non ofuschiamo
+                                    if (
+                                        util.local_var_pattern.match(l)
+                                        or l.strip().startswith(":try")
+                                        # or util.instruction_register_pattern.match(l)
+                                    ):
+                                        forbidden_instruction = True
+                                if forbidden_instruction: # se c'e' una variabile .local nella linea dell'iput, non ofuschiamo
                                     lines.append(line)
                                     continue
 
@@ -105,9 +116,9 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                     lines.append(line)
                                     continue
                                 
-                                # ci sono almeno 2 registri liberi, prendo i primi due
-                                v0_label = usable_regs[0]
-                                v1_label = usable_regs[1]
+                                # ci sono almeno 2 registri liberi, prendo gli ultimi due
+                                v0_label = usable_regs[-1]
+                                v1_label = usable_regs[-2]
 
                                 v0, v1 = (
                                     util.get_random_int(1, 32),
@@ -115,30 +126,30 @@ class OpaqueAssignment(obfuscator_category.IRenameObfuscator):
                                 )
                                 else_label = util.get_random_string(16)
                                 goto_end_condition_label = util.get_random_string(16)
-                                opaque_lines = []
-                                opaque_lines.append("\n\tconst {0}, {1}\n".format(v0_label, v0))
-                                opaque_lines.append("\tconst {0}, {1}\n".format(v1_label, v1))
-                                opaque_lines.append("\tadd-int {0}, {1}, {2}\n".format(v0_label, v0_label, v1_label))
-                                opaque_lines.append("\trem-int {0}, {1}, {2}\n".format(v0_label, v0_label, v1_label))
-                                opaque_lines.append("\tif-lez {0}, :{1}\n".format(v0_label, else_label))
+                                # opaque_lines = []
+                                lines.append("    const {0}, {1}\n".format(v0_label, v0))
+                                lines.append("    const {0}, {1}\n".format(v1_label, v1))
+                                lines.append("    add-int {0}, {1}, {2}\n".format(v0_label, v0_label, v1_label))
+                                lines.append("    rem-int {0}, {1}, {2}\n".format(v0_label, v0_label, v1_label))
+                                lines.append("    if-ltz {0}, :{1}\n".format(v0_label, else_label))
                                 # ripristinare evenutali valori dei registri
-                                for usable_reg in usable_regs:
-                                    reg_line = local_vars[usable_reg]["line"]
-                                    if reg_line not in lines:
-                                        lines.append(local_vars[usable_reg]["line"])
+                                # for usable_reg in usable_regs:
+                                #     reg_line = local_vars[usable_reg]["line"]
+                                #     if reg_line not in lines:
+                                #         lines.append(local_vars[usable_reg]["line"])
                                 # scriviamo resto del codice
-                                tmp_lines = []
-                                for l in lines:
-                                    if l.strip().startswith("."):
-                                        tmp_lines.append(l)
-                                    else:
-                                        opaque_lines.append(l)
-                                lines = tmp_lines + opaque_lines
+                                # tmp_lines = []
+                                # for l in lines:
+                                #     if l.strip().startswith("."):
+                                #         tmp_lines.append(l)
+                                #     else:
+                                #         opaque_lines.append(l)
+                                # lines = tmp_lines + opaque_lines
                                 lines.append(line) # istruzione iput   
-                                lines.append("\tgoto/32 :{0}\n".format(goto_end_condition_label))
-                                lines.append("\t:{0}\n".format(else_label))
-                                lines.append("\t:{0}\n".format(goto_end_condition_label))
-                                else_label = None
+                                # lines.append("\tgoto/32 :{0}\n".format(goto_end_condition_label))
+                                lines.append("    :{0}\n".format(else_label))
+                                # lines.append("\t:{0}\n".format(goto_end_condition_label))
+                                # else_label = None
                                 goto_end_condition_label = None
                                 obfuscated = True
                             else:
