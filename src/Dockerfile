@@ -1,17 +1,17 @@
-FROM python:3.11.1-slim-bullseye
+FROM python:3.11.12-slim-bullseye
 
-ENV APKTOOL_VERSION="2.9.0"
+ENV APKTOOL_VERSION="2.12.0"
 ENV ANDROID_HOME="/android-sdk-linux"
-ENV BUILD_TOOLS_VERSION="34.0.0"
+ENV BUILD_TOOLS_VERSION="35.0.0"
 ENV PATH="${PATH}:${ANDROID_HOME}/tools/bin:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}"
 
 # Install the needed tools.
 RUN apt update && \
     # Java JDK (needed for apktool).
-    apt install --no-install-recommends -y openjdk-11-jdk-headless wget zip unzip && \
+    apt install --no-install-recommends -y openjdk-17-jdk-headless wget zip unzip && \
     # Android SDK (needed for zipalign and apksigner).
     mkdir -p "${ANDROID_HOME}" && \
-    wget -q "https://dl.google.com/android/repository/commandlinetools-linux-7583922_latest.zip" -O android-sdk.zip && \
+    wget -q "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip" -O android-sdk.zip && \
     unzip -q android-sdk.zip -d "${ANDROID_HOME}" && rm android-sdk.zip && \
     yes | sdkmanager --sdk_root="${ANDROID_HOME}" "build-tools;${BUILD_TOOLS_VERSION}" && \
     # Apktool.
@@ -32,6 +32,7 @@ RUN python3 -m pip install --no-cache-dir -r /Obfuscapk/requirements.txt
 
 # Copy the needed files.
 COPY ./obfuscapk/ /Obfuscapk/obfuscapk/
+COPY ./yapsy/ /Obfuscapk/yapsy/
 
 # Set the working directory (to be used when mounting files from the host).
 WORKDIR /workdir
