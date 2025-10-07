@@ -118,27 +118,6 @@ class Apktool(object):
             self.logger.error("Error during decoding: {0}".format(e))
             raise
 
-    def fix_resources_arsc_compression(self, input_apk, output_apk):
-        """
-        Ricrea l'APK con resources.arsc non compresso (STORED)
-        """
-        # Crea un nuovo APK
-        with zipfile.ZipFile(input_apk, 'r') as zin:
-            with zipfile.ZipFile(output_apk, 'w') as zout:
-                # Copia tutti i file
-                for item in zin.infolist():
-                    data = zin.read(item.filename)
-                    
-                    if item.filename == 'resources.arsc':
-                        # Forza STORED (non compresso) per resources.arsc
-                        zout.writestr(item, data, compress_type=zipfile.ZIP_STORED)
-                        print(f"✓ {item.filename} - STORED (non compresso)")
-                    else:
-                        # Mantieni la compressione originale per gli altri file
-                        zout.writestr(item, data, compress_type=item.compress_type)
-        
-        print(f"\n✓ APK fixato salvato in: {output_apk}")
-
     def build(
         self, source_dir_path: str, output_apk_path: str = None, use_aapt2: bool = False
     ) -> str:
@@ -172,7 +151,7 @@ class Apktool(object):
             "--force",
             source_dir_path,
             "-o",
-            f"pre_{output_apk_path}",
+            output_apk_path,
         ]
 
         if use_aapt2:
@@ -192,14 +171,12 @@ class Apktool(object):
                 # Report exception raised in Apktool.
                 raise subprocess.CalledProcessError(1, build_cmd, output)
 
-            if not os.path.isfile(f"pre_{output_apk_path}"):
+            if not os.path.isfile(output_apk_path):
                 raise FileNotFoundError(
                     '"{0}" was not built correctly. Apktool output:\n{1}'.format(
-                        f"pre_{output_apk_path}", output.decode(errors="replace")
+                        output_apk_path, output.decode(errors="replace")
                     )
                 )
-            
-            self.fix_resources_arsc_compression(f"pre_{output_apk_path}", output_apk_path)
 
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
