@@ -535,6 +535,15 @@ alphabetical order). Please refer to the source code of the project for more det
 </details>
 
 
+<details><summary><b>OpaqueAssignment</b> [Code]</summary>
+
+> Insert opaque predicates around assignment statements.
+> The inserted conditional branches always evaluate to a fixed outcome, making
+> the code harder to analyze while preserving its original behavior.
+> [:page_facing_up: OpaqueAssignment source code](https://github.com/Andrew0133/Obfuscapk/tree/master/src/obfuscapk/obfuscators/opaque_assignment)
+</details>
+
+
 <details><summary><b>RandomManifest</b> [Resource]</summary>
 
 > Randomly reorder entries in the manifest file.  

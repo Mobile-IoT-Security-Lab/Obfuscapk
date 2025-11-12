@@ -3,7 +3,7 @@ FROM python:3.11.12-slim-bullseye
 ENV APKTOOL_VERSION="2.12.0"
 ENV ANDROID_HOME="/android-sdk-linux"
 ENV BUILD_TOOLS_VERSION="35.0.0"
-ENV PATH="${PATH}:${ANDROID_HOME}/tools/bin:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}"
+ENV PATH="${PATH}:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}"
 
 # Install the needed tools.
 RUN apt update && \
@@ -12,8 +12,9 @@ RUN apt update && \
     # Android SDK (needed for zipalign and apksigner).
     mkdir -p "${ANDROID_HOME}" && \
     wget -q "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip" -O android-sdk.zip && \
-    unzip -q android-sdk.zip -d "${ANDROID_HOME}" && rm android-sdk.zip && \
-    yes | sdkmanager --sdk_root="${ANDROID_HOME}" "build-tools;${BUILD_TOOLS_VERSION}" && \
+    unzip -q android-sdk.zip -d "${ANDROID_HOME}/cmdline-tools" && rm android-sdk.zip && \
+    mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" && \
+    yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --sdk_root="${ANDROID_HOME}" "build-tools;${BUILD_TOOLS_VERSION}" && \
     # Apktool.
     wget -q "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool" \
     -O /usr/local/bin/apktool && chmod a+x /usr/local/bin/apktool && \
