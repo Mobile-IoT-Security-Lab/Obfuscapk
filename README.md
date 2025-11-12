@@ -124,18 +124,6 @@ $ docker --version
 Docker version 20.10.21, build baeda1f
 ```
 
-#### Official Docker Hub image
-
-The [official Obfuscapk Docker image](https://hub.docker.com/r/claudiugeorgiu/obfuscapk)
-is available on Docker Hub (automatically built from this repository):
-
-```Shell
-$ # Download the Docker image.
-$ docker pull claudiugeorgiu/obfuscapk
-$ # Give it a shorter name.
-$ docker tag claudiugeorgiu/obfuscapk obfuscapk
-```
-
 #### Install
 
 If you downloaded the official image from Docker Hub, you are ready to use the tool so
@@ -239,8 +227,6 @@ usage: python3 -m obfuscapk.cli [-h] -o OBFUSCATOR [-w DIR] [-d OUT_APK_OR_AAB]
 
 Obfuscapk is now ready to be used, see the [usage instructions](#-usage) for more
 information.
-
-
 
 ## ❱ Usage
 
