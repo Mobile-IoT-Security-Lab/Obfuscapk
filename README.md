@@ -602,6 +602,6 @@ This software was developed for research purposes at the Computer Security Lab
 ## ❱ Team
 
 * [Simone Aonzo](https://simoneaonzo.it/) - Research Assistant
-* [Gabriel Claudiu Georgiu](https://github.com/ClaudiuGeorgiu) - Core Developer
-* [Luca Verderame](https://csec.it/people/luca_verderame/) - Postdoctoral Researcher
+* [Gabriel Claudiu Georgiu](https://github.com/ClaudiuGeorgiu) - Developer
+* [Luca Verderame](https://csec.it/people/luca_verderame/) - Faculty Member
 * [Alessio Merlo](https://csec.it/people/alessio_merlo/) - Faculty Member
