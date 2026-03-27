@@ -312,9 +312,15 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
         try:
+            # There is a method limit for dex files.
+            max_methods_to_add = obfuscation_info.get_remaining_methods_per_obfuscator()
+
             dangerous_api: Set[str] = set(util.get_dangerous_api())
 
-            obfuscator_smali_code: str = ""
+            clinit_calls_code = ""
+            additional_methods_code = ""
+            current_chunk_code = ""
+            chunk_index = 0
 
             move_result_pattern = re.compile(
                 r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
@@ -331,12 +337,6 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     )
                 )
 
-                # There is no space for further reflection instructions.
-                if (
-                    self.obfuscator_instructions_length
-                    >= self.obfuscator_instructions_limit
-                ):
-                    break
 
                 with open(smali_file, "r", encoding="utf-8") as current_file:
                     lines = current_file.readlines()
@@ -353,7 +353,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
                 # Find the method declarations in this smali file.
                 for line_number, line in enumerate(lines):
-                    method_match = util.method_pattern.match(line)
+                    method_match = util.method_pattern.search(line)
                     if method_match:
                         method_index.append(line_number)
 
@@ -363,7 +363,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
                         # Save the number of local registers of this method.
                         local_count = 16
-                        local_match = util.locals_pattern.match(lines[line_number + 1])
+                        local_match = util.locals_pattern.search(lines[line_number + 1])
                         if local_match:
                             local_count = int(local_match.group("local_count"))
                             method_local_count.append(local_count)
@@ -388,16 +388,10 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     if method_is_reflectable[method_number]:
                         current_line_number = index
                         while not lines[current_line_number].startswith(".end method"):
-                            # There is no space for further reflection instructions.
-                            if (
-                                self.obfuscator_instructions_length
-                                >= self.obfuscator_instructions_limit
-                            ):
-                                break
 
                             current_line_number += 1
 
-                            invoke_match = util.invoke_pattern.match(
+                            invoke_match = util.invoke_pattern.search(
                                 lines[current_line_number]
                             )
                             if invoke_match:
@@ -417,6 +411,9 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                 # dangerous APIs.
                                 if method not in dangerous_api:
                                     continue
+
+                                if self.methods_with_reflection >= max_methods_to_add:
+                                    break
 
                                 if (
                                     invoke_match.group("invoke_type")
@@ -447,7 +444,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                         # result is not used.
                                         break
 
-                                    move_result_match = move_result_pattern.match(
+                                    move_result_match = move_result_pattern.search(
                                         lines[move_result_index]
                                     )
                                     if move_result_match:
@@ -514,9 +511,21 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
                                 # Add the original method to the list of methods using
                                 # reflection.
-                                obfuscator_smali_code += self.add_smali_reflection_code(
+                                current_chunk_code += self.add_smali_reflection_code(
                                     tmp_class_name, tmp_method, tmp_param
                                 )
+
+                                if self.obfuscator_instructions_length >= self.obfuscator_instructions_limit:
+                                    method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                                    method_decl += current_chunk_code
+                                    method_decl += "\n\treturn-void\n.end method\n\n"
+
+                                    additional_methods_code += method_decl
+                                    clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/AdvancedApiReflection;->init{0}()V\n\n".format(chunk_index)
+
+                                    self.obfuscator_instructions_length = 0
+                                    current_chunk_code = ""
+                                    chunk_index += 1
 
                                 # Change the original code with code using reflection.
                                 lines[
@@ -546,10 +555,19 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
             destination_file = os.path.join(
                 destination_dir, "AdvancedApiReflection.smali"
             )
+            if current_chunk_code:
+                method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                method_decl += current_chunk_code
+                method_decl += "\n\treturn-void\n.end method\n\n"
+
+                additional_methods_code += method_decl
+                clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/AdvancedApiReflection;->init{0}()V\n\n".format(chunk_index)
+
             with open(destination_file, "w", encoding="utf-8") as api_reflection_smali:
                 reflection_code = util.get_advanced_api_reflection_smali_code().replace(
-                    "#!code_to_replace!#", obfuscator_smali_code
+                    "#!code_to_replace!#", clinit_calls_code
                 )
+                reflection_code += additional_methods_code
                 api_reflection_smali.write(reflection_code)
 
         except Exception as e:

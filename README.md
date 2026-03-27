@@ -1,6 +1,9 @@
-> [!IMPORTANT]  
-> From 17/01/2024, the Obfuscapk project will be maintained by the other co-authors here. Consider this as the **new official Obfuscapk repository**.
+> [!IMPORTANT]
+> This project is archived and no longer maintained.
 > 
+> Some of the most common questions are answered in
+> [FAQ](https://github.com/ClaudiuGeorgiu/Obfuscapk/blob/master/docs/FAQ.md) and
+> [troubleshooting](https://github.com/ClaudiuGeorgiu/Obfuscapk/blob/master/docs/TROUBLESHOOTING.md).
 
 ![Logo](https://raw.githubusercontent.com/ClaudiuGeorgiu/Obfuscapk/master/docs/logo/logo.png)
 
@@ -124,6 +127,18 @@ $ docker --version
 Docker version 20.10.21, build baeda1f
 ```
 
+#### Official Docker Hub image
+
+The [official Obfuscapk Docker image](https://hub.docker.com/r/claudiugeorgiu/obfuscapk)
+is available on Docker Hub (automatically built from this repository):
+
+```Shell
+$ # Download the Docker image.
+$ docker pull claudiugeorgiu/obfuscapk
+$ # Give it a shorter name.
+$ docker tag claudiugeorgiu/obfuscapk obfuscapk
+```
+
 #### Install
 
 If you downloaded the official image from Docker Hub, you are ready to use the tool so
@@ -163,7 +178,7 @@ and available from the command line:
 
 ```Shell
 $ apktool
-Apktool v2.9.0 - a tool for reengineering Android apk files
+Apktool v2.9.3 - a tool for reengineering Android apk files
 ...
 ```
 ```Shell
@@ -187,7 +202,7 @@ the latest available version from
 save it as `BundleDecompiler.jar` in a directory included in `PATH` (e.g., in Ubuntu,
 `/usr/local/bin` or `/usr/bin`) and make sure it has the executable flag set.
 
-To use BundleDecompiler and `apktool` you also need a recent version of Java. 
+To use BundleDecompiler(0.0.2) and `apktool`(v.2.9.3) you also need a recent version of Java. 
 `zipalign` and `apksigner` are included in the Android SDK. The location of the
 executables can also be specified through the following environment variables:
 `APKTOOL_PATH`, `BUNDLE_DECOMPILER_PATH`, `APKSIGNER_PATH` and `ZIPALIGN_PATH` (e.g.,
@@ -227,6 +242,8 @@ usage: python3 -m obfuscapk.cli [-h] -o OBFUSCATOR [-w DIR] [-d OUT_APK_OR_AAB]
 
 Obfuscapk is now ready to be used, see the [usage instructions](#-usage) for more
 information.
+
+
 
 ## ❱ Usage
 
@@ -521,15 +538,6 @@ alphabetical order). Please refer to the source code of the project for more det
 </details>
 
 
-<details><summary><b>OpaqueAssignment</b> [Code]</summary>
-
-> Insert opaque predicates around assignment statements.
-> The inserted conditional branches always evaluate to a fixed outcome, making
-> the code harder to analyze while preserving its original behavior.
-> [:page_facing_up: OpaqueAssignment source code](https://github.com/Andrew0133/Obfuscapk/tree/master/src/obfuscapk/obfuscators/opaque_assignment)
-</details>
-
-
 <details><summary><b>RandomManifest</b> [Resource]</summary>
 
 > Randomly reorder entries in the manifest file.  
@@ -602,6 +610,6 @@ This software was developed for research purposes at the Computer Security Lab
 ## ❱ Team
 
 * [Simone Aonzo](https://simoneaonzo.it/) - Research Assistant
-* [Gabriel Claudiu Georgiu](https://github.com/ClaudiuGeorgiu) - Developer
-* [Luca Verderame](https://csec.it/people/luca_verderame/) - Faculty Member
+* [Gabriel Claudiu Georgiu](https://github.com/ClaudiuGeorgiu) - Core Developer
+* [Luca Verderame](https://csec.it/people/luca_verderame/) - Postdoctoral Researcher
 * [Alessio Merlo](https://csec.it/people/alessio_merlo/) - Faculty Member

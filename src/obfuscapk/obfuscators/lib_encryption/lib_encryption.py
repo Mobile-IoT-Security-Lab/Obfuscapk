@@ -19,6 +19,7 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+        self.is_adding_methods = True
 
         self.encryption_secret = "This-key-need-to-be-32-character"
 
@@ -61,7 +62,7 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
                     start_index = 0
                     for line_number, line in enumerate(lines):
                         if not class_name:
-                            class_match = util.class_pattern.match(line)
+                            class_match = util.class_pattern.search(line)
                             if class_match:
                                 class_name = class_match.group("class_name")
                                 continue
@@ -74,7 +75,7 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
                             # Entering static constructor.
                             editing_constructor = True
                             start_index = line_number + 1
-                            local_match = util.locals_pattern.match(
+                            local_match = util.locals_pattern.search(
                                 lines[line_number + 1]
                             )
                             if local_match:
@@ -99,13 +100,13 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
 
                         elif editing_constructor:
                             # Inside static constructor.
-                            invoke_match = native_lib_invoke_pattern.match(line)
+                            invoke_match = native_lib_invoke_pattern.search(line)
                             if invoke_match:
                                 # Native library load instruction. Iterate the
                                 # constructor lines backwards in order to find the
                                 # string containing the name of the loaded library.
                                 for l_num in range(line_number - 1, start_index, -1):
-                                    string_match = util.const_string_pattern.match(
+                                    string_match = util.const_string_pattern.search(
                                         lines[l_num]
                                     )
                                     if string_match and string_match.group(

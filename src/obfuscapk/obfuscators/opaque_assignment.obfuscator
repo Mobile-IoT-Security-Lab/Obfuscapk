@@ -1,7 +1,0 @@
-[Core]
-Name = OpaqueAssignment
-Module = opaque_assignment
-
-[Documentation]
-Description = Opaque variable assignment
-Version = 1.0

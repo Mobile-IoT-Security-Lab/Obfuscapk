@@ -117,6 +117,19 @@ def get_cmd_args(args: list = None):
         help="The file containing the package names to be ignored during the "
         "obfuscation (one package name per line)",
     )
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove the intermediate working directory after a successful obfuscation",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        metavar="DIR",
+        default="/output",
+        help="The directory where to save the final obfuscated apk/aab file. If "
+        "specified, the file will be moved from the working directory to this one",
+    )
     return parser.parse_args(args)
 
 
@@ -124,7 +137,8 @@ def main():
     """
     A full command to obfuscate an application:
 
-    python3 -m obfuscapk.cli -p -i -w /working/dir/path --use-aapt2 -d /path/to/obfuscated.apk \
+    python3 -m obfuscapk.cli -p -i --cleanup --output-dir /output/dir -w /working/dir/path \
+    --use-aapt2 -d /path/to/obfuscated.apk \
     -o DebugRemoval -o LibEncryption -o CallIndirection -o MethodRename \
     -o AssetEncryption -o MethodOverload -o ConstStringEncryption \
     -o ResStringEncryption -o ArithmeticBranch -o FieldRename -o Nop -o Goto \
@@ -139,7 +153,11 @@ def main():
     # the needed external tools are available and ready to be used.
     check_external_tool_dependencies()
 
+    import sys
     arguments = get_cmd_args()
+
+    if not arguments.interactive and sys.stdout.isatty():
+        arguments.interactive = True
 
     if arguments.apk_file:
         arguments.apk_file = arguments.apk_file.strip(" '\"")
@@ -168,6 +186,9 @@ def main():
     if arguments.ignore_packages_file:
         arguments.ignore_packages_file = arguments.ignore_packages_file.strip(" '\"")
 
+    if arguments.output_dir:
+        arguments.output_dir = arguments.output_dir.strip(" '\"")
+
     perform_obfuscation(
         arguments.apk_file,
         arguments.obfuscator,
@@ -182,6 +203,8 @@ def main():
         arguments.key_password,
         arguments.ignore_packages_file,
         arguments.use_aapt2,
+        arguments.cleanup,
+        arguments.output_dir,
     )
 
 

@@ -25,6 +25,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
         smali_file: str,
         overloaded_method_body: str,
         class_names_to_ignore: Set[str],
+        max_to_add: int,
     ) -> int:
         new_methods_num: int = 0
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
@@ -36,7 +37,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                     continue
 
                 if not class_name:
-                    class_match = util.class_pattern.match(line)
+                    class_match = util.class_pattern.search(line)
                     # If this is an enum class, skip it.
                     if " enum " in line:
                         skip_remaining_lines = True
@@ -44,7 +45,14 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                         continue
                     elif class_match:
                         class_name = class_match.group("class_name")
-                        if class_name in class_names_to_ignore:
+                        if (
+                            class_name in class_names_to_ignore
+                            or class_name.startswith(
+                                tuple(
+                                    "L{0}".format(p) for p in self.ignore_package_names
+                                )
+                            )
+                        ):
                             # The methods of this class should be ignored when
                             # renaming, so proceed with the next class.
                             skip_remaining_lines = True
@@ -59,7 +67,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                     continue
 
                 # Method declared in class.
-                method_match = util.method_pattern.match(line)
+                method_match = util.method_pattern.search(line)
 
                 # Avoid constructors, native and abstract methods.
                 if (
@@ -68,6 +76,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                     and "<clinit>" not in line
                     and " native " not in line
                     and " abstract " not in line
+                    and new_methods_num < max_to_add
                 ):
                     # Create lists with random parameters to be added to the method
                     # signature. Add 3 overloads for each method and for each overload
@@ -75,6 +84,9 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                     for params in util.get_random_list_permutations(
                         random.sample(self.param_types, 4)
                     )[:3]:
+                        if new_methods_num >= max_to_add:
+                            break
+
                         new_param = "".join(params)
                         # Update parameter list and add void return type.
                         overloaded_signature = line.replace(
@@ -117,7 +129,10 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
             )
             if added_methods < max_methods_to_add:
                 added_methods += self.add_method_overloads_to_file(
-                    smali_file, overloaded_method_body, class_names_to_ignore
+                    smali_file,
+                    overloaded_method_body,
+                    class_names_to_ignore,
+                    max_methods_to_add - added_methods,
                 )
             else:
                 break
@@ -131,6 +146,9 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
             # NOTE: only direct methods (methods that are by nature non-overridable,
             # namely private instance methods, constructors and static methods) will be
             # overloaded.
+
+            # Get user defined ignore package list.
+            self.ignore_package_names = obfuscation_info.get_ignore_package_names()
 
             android_class_names: Set[str] = set(util.get_android_class_names())
 

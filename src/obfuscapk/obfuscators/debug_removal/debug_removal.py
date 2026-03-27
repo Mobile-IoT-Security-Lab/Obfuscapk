@@ -60,7 +60,9 @@ class DebugRemoval(obfuscator_category.ICodeObfuscator):
                             inside_param_declaration = False
                             # Remove unnecessary data from param (name and type
                             # comment).
-                            line = "{0}\n".format(param_pattern.match(line).group())
+                            param_match = param_pattern.match(line)
+                            if param_match:
+                                line = "{0}\n".format(param_match.group())
                             reversed_lines_to_keep.append(line)
                         elif not inside_param_declaration:
                             if not any(

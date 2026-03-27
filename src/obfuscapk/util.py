@@ -22,26 +22,51 @@ random.seed(random_seed)
 #                                Common regex patterns.                                #
 ########################################################################################
 
+def get_length_preserved_hash(identifier: str) -> str:
+    if not identifier or len(identifier) <= 2:
+        return identifier
+
+    identifier_md5 = get_string_md5(identifier)
+
+    first_char_alphabet = string.ascii_letters
+    other_chars_alphabet = string.ascii_letters + string.digits
+
+    h_val = int(identifier_md5, 16)
+
+    target_len = len(identifier)
+    result = first_char_alphabet[h_val % len(first_char_alphabet)]
+    h_val //= len(first_char_alphabet)
+
+    for _ in range(target_len - 1):
+        result += other_chars_alphabet[h_val % len(other_chars_alphabet)]
+        h_val //= len(other_chars_alphabet)
+
+    if len(result) < target_len:
+        result = result.ljust(target_len, "0")
+
+    return result[:target_len]
+
+
 # L<class_name>;  # Every class name starts with L and ends with ;
 class_name_pattern = re.compile(r"L[^():\s]+?;", re.UNICODE)
 
 # .class <other_optional_stuff> <class_name;>  # Every class name ends with ;
-class_pattern = re.compile(r"\.class.+?(?P<class_name>\S+?;)", re.UNICODE)
+class_pattern = re.compile(r"\s*\.class.+?(?P<class_name>\S+?;)", re.UNICODE)
 
 # .super <class_name;>  # Every class name ends with ;
-super_class_pattern = re.compile(r"\.super\s(?P<class_name>\S+?;)", re.UNICODE)
+super_class_pattern = re.compile(r"\s*\.super\s(?P<class_name>\S+?;)", re.UNICODE)
 
 # .locals <number>
 locals_pattern = re.compile(r"\s+\.locals\s(?P<local_count>\d+)")
 
 # .field <other_optional_stuff> <field_name>:<field_type> <optional_initialization>
 field_pattern = re.compile(
-    r"\.field.+?(?P<field_name>\S+?):" r"(?P<field_type>\S+)", re.UNICODE
+    r"\s*\.field.+?(?P<field_name>\S+?):" r"(?P<field_type>\S+)", re.UNICODE
 )
 
 # .method <other_optional_stuff> <method_name>(<param>)<return_type>
 method_pattern = re.compile(
-    r"\.method.+?(?P<method_name>\S+?)"
+    r"\s*\.method.+?(?P<method_name>\S+?)"
     r"\((?P<method_param>\S*?)\)"
     r"(?P<method_return>\S+)",
     re.UNICODE,
@@ -83,17 +108,6 @@ const_string_pattern = re.compile(
     re.UNICODE,
 )
 
-# Matches instance field assignment instructions in smali files (like iput, iput-object, iput-boolean, etc.)
-iput_pattern = re.compile(r"^\s*iput(?:-[\w]+)?\s+", re.UNICODE)
-
-# .line <line_number>  # Matches source line number debug info in smali files
-line_number_pattern = re.compile(r"^\s*\.line\s+(?P<line_number>\d+)", re.UNICODE)
-
-# .local var pattern
-local_var_pattern = re.compile(r'\s+\.local\s+(v\d+),')
-
-# '.const* <register>,' pattern
-instruction_register_pattern = re.compile(r"^\s*const[\w/-]*\s+(?P<register>v\d+),", re.UNICODE)
 
 ########################################################################################
 
@@ -115,7 +129,8 @@ def show_list_progress(
             dynamic_ncols=True,
             unit=unit,
             desc=description,
-            bar_format="{l_bar}{bar}|[{elapsed}<{remaining}, {rate_fmt}]",
+            mininterval=0.1,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
         )
 
 

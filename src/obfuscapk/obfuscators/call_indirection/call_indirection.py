@@ -3,7 +3,7 @@
 import logging
 import re
 from io import StringIO
-from typing import List
+from typing import List, Set
 
 from obfuscapk import obfuscator_category
 from obfuscapk import util
@@ -46,6 +46,12 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
     def is_init(self, invoke_method: str) -> bool:
         return "<init>" in invoke_method or "<clinit>" in invoke_method
 
+    def get_wrapper_method_name(
+        self, invoke_object: str, invoke_method: str, invoke_param: str
+    ) -> str:
+        signature = "{0}{1}{2}".format(invoke_object, invoke_method, invoke_param)
+        return "m{0}".format(util.get_string_md5(signature)[:8])
+
     def change_method_call(
         self,
         invoke_type: str,
@@ -57,8 +63,13 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         class_name: str,
         new_method: StringIO,
         out_file,
-    ):
-        new_method_name = util.get_random_string(16)
+        generated_wrappers: Set[str],
+    ) -> bool:
+        """Returns True if a new wrapper method was generated, False if reused."""
+
+        new_method_name = self.get_wrapper_method_name(
+            invoke_object, invoke_method, invoke_param
+        )
 
         is_range_invocation = self.is_range(invoke_type)
         is_static_invocation = self.is_static(invoke_type)
@@ -112,6 +123,15 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
             )
         )
 
+        wrapper_key = "{0}->{1}({2}{3}){4}".format(
+            class_name, new_method_name, add_param, invoke_param, invoke_return
+        )
+
+        if wrapper_key in generated_wrappers:
+            return False
+
+        generated_wrappers.add(wrapper_key)
+
         # Prepare the new method(s) declaration (will be inserted later into code).
         new_method.write(
             ".method public static "
@@ -149,23 +169,38 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         new_method.write("    {return_result}\n".format(return_result=return_str))
         new_method.write(".end method\n\n")
 
-    def update_method(self, smali_file: str, new_method: StringIO):
+        return True
+
+    def update_method(
+        self,
+        smali_file: str,
+        new_method: StringIO,
+        added_methods: int,
+        max_methods_to_add: int,
+        generated_wrappers: Set[str],
+    ) -> int:
+        """Returns the number of new wrapper methods generated."""
+        new_methods_count = 0
+
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
             class_name = None
             for line in in_file:
                 if not class_name:
-                    class_match = util.class_pattern.match(line)
+                    class_match = util.class_pattern.search(line)
                     if class_match:
                         class_name = class_match.group("class_name")
                         out_file.write(line)
                         continue
 
-                invoke_match = util.invoke_pattern.match(line)
+                invoke_match = util.invoke_pattern.search(line)
                 if invoke_match:
-                    if not self.is_init(invoke_match.group("invoke_method")):
+                    if (
+                        not self.is_init(invoke_match.group("invoke_method"))
+                        and (added_methods + new_methods_count) < max_methods_to_add
+                    ):
                         # The following function will write into the file the new
                         # method invocation.
-                        self.change_method_call(
+                        was_new = self.change_method_call(
                             invoke_match.group("invoke_type"),
                             invoke_match.group("invoke_pass"),
                             invoke_match.group("invoke_object"),
@@ -175,11 +210,16 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
                             class_name,
                             new_method,
                             out_file,
+                            generated_wrappers,
                         )
+                        if was_new:
+                            new_methods_count += 1
                     else:
                         out_file.write(line)
                 else:
                     out_file.write(line)
+
+        return new_methods_count
 
     def add_method(self, smali_file: str, new_method: StringIO):
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
@@ -191,13 +231,12 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
                 else:
                     out_file.write(line)
 
-    def get_declared_method_number_in_text(self, text: str) -> int:
-        return sum(1 for line in text.splitlines() if line.startswith(".method "))
-
     def add_call_indirections(
         self, smali_files: List[str], max_methods_to_add: int, interactive: bool = False
     ):
         added_methods = 0
+        generated_wrappers: Set[str] = set()
+
         for smali_file in util.show_list_progress(
             smali_files,
             interactive=interactive,
@@ -208,11 +247,15 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
             )
             if added_methods < max_methods_to_add:
                 with StringIO() as new_method:
-                    self.update_method(smali_file, new_method)
-                    self.add_method(smali_file, new_method)
-                    added_methods += self.get_declared_method_number_in_text(
-                        new_method.getvalue()
+                    new_count = self.update_method(
+                        smali_file,
+                        new_method,
+                        added_methods,
+                        max_methods_to_add,
+                        generated_wrappers,
                     )
+                    self.add_method(smali_file, new_method)
+                    added_methods += new_count
             else:
                 break
 

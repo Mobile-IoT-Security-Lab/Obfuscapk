@@ -1,0 +1,12 @@
+services:
+  obfuscapk:
+    build: .
+    user: "${UID:-1000}:${GID:-1000}"
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./apks:/workdir
+      - ./output:/output
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1

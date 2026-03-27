@@ -17,29 +17,27 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
         self.ignore_package_names = []
 
-        self.is_adding_fields = True
+        self.is_adding_fields = False
 
         self.max_fields_to_add = 0
         self.added_fields = 0
+        self.field_mapping = {}
+        self.field_counter = 0
 
     def rename_field(self, field_name: str) -> str:
-        field_md5 = util.get_string_md5(field_name)
-        return "f{0}".format(field_md5.lower()[:8])
+        return util.get_length_preserved_hash(field_name)
 
     def get_sdk_class_names(self, smali_files: List[str]) -> Set[str]:
         class_names: Set[str] = set()
         for smali_file in smali_files:
             with open(smali_file, "r", encoding="utf-8") as current_file:
                 for line in current_file:
-                    class_match = util.class_pattern.match(line)
+                    class_match = util.class_pattern.search(line)
                     if class_match:
-                        # This is probably a SDK class, but we have its declaration so
-                        # we can change the fields inside it.
                         if class_match.group("class_name").startswith(
                             ("Landroid", "Ljava")
                         ):
                             class_names.add(class_match.group("class_name"))
-                        # There is only one class declaration per file.
                         break
         return class_names
 
@@ -48,7 +46,6 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
     ) -> Set[str]:
         renamed_fields: Set[str] = set()
 
-        # Search for field definitions that can be renamed.
         for smali_file in util.show_list_progress(
             smali_files,
             interactive=interactive,
@@ -56,49 +53,42 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         ):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
                 class_name = None
+
                 for line in in_file:
                     ignore = False
 
                     if not class_name:
-                        class_match = util.class_pattern.match(line)
+                        class_match = util.class_pattern.search(line)
                         if class_match:
                             class_name = class_match.group("class_name")
 
-                    # Field declared in class.
-                    field_match = util.field_pattern.match(line)
+                    field_match = util.field_pattern.search(line)
 
-                    if class_name.startswith(tuple(self.ignore_package_names)):
+                    if class_name and class_name.startswith(
+                        tuple("L{0}".format(p) for p in self.ignore_package_names)
+                    ):
                         ignore = True
 
                     if field_match:
-                        field_name = field_match.group("field_name")
-                        # Avoid sub-fields and user defined packages.
-                        if not ignore and "$" not in field_name:
-                            # Rename field declaration (usages of this field will be
-                            # renamed later) and add some random fields.
+                        old_name = field_match.group("field_name")
+                        field_type = field_match.group("field_type")
+                        
+                        if not ignore and "$" not in old_name:
+                            mapping_key = "{0}:{1}".format(old_name, field_type)
+                            
+                            if mapping_key not in self.field_mapping:
+                                self.field_mapping[mapping_key] = "f{0}".format(self.field_counter)
+                                self.field_counter += 1
+                                
+                            new_name = self.field_mapping[mapping_key]
+                            
                             line = line.replace(
-                                "{0}:".format(field_name),
-                                "{0}:".format(self.rename_field(field_name)),
+                                "{0}:".format(old_name),
+                                "{0}:".format(new_name),
                             )
                             out_file.write(line)
 
-                            # Add random fields.
-                            if self.added_fields < self.max_fields_to_add:
-                                for _ in range(util.get_random_int(1, 4)):
-                                    out_file.write("\n")
-                                    out_file.write(
-                                        line.replace(
-                                            ":",
-                                            "{0}:".format(util.get_random_string(8)),
-                                        )
-                                    )
-                                    self.added_fields += 1
-
-                            field = "{field_name}:{field_type}".format(
-                                field_name=field_match.group("field_name"),
-                                field_type=field_match.group("field_type"),
-                            )
-                            renamed_fields.add(field)
+                            renamed_fields.add("{0}->{1}:{2}".format(class_name, old_name, field_type))
                         else:
                             out_file.write(line)
                     else:
@@ -120,24 +110,19 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         ):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
                 for line in in_file:
-                    # Field usage.
-                    field_usage_match = util.field_usage_pattern.match(line)
+                    field_usage_match = util.field_usage_pattern.search(line)
                     if field_usage_match:
-                        field = "{field_name}:{field_type}".format(
-                            field_name=field_usage_match.group("field_name"),
-                            field_type=field_usage_match.group("field_type"),
-                        )
-                        class_name = field_usage_match.group("field_object")
-                        field_name = field_usage_match.group("field_name")
-                        if field in fields_to_rename and (
-                            not class_name.startswith(("Landroid", "Ljava"))
-                            or class_name in sdk_classes
-                        ):
-                            # Rename field usage.
+                        old_name = field_usage_match.group("field_name")
+                        field_type = field_usage_match.group("field_type")
+                        
+                        mapping_key = "{0}:{1}".format(old_name, field_type)
+                        
+                        if mapping_key in self.field_mapping:
+                            new_name = self.field_mapping[mapping_key]
                             out_file.write(
                                 line.replace(
-                                    "{0}:".format(field_name),
-                                    "{0}:".format(self.rename_field(field_name)),
+                                    "{0}:".format(old_name),
+                                    "{0}:".format(new_name),
                                 )
                             )
                         else:
@@ -148,47 +133,16 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
     def obfuscate(self, obfuscation_info: Obfuscation):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
-        # Get user defined ignore package list.
         self.ignore_package_names = obfuscation_info.get_ignore_package_names()
 
         try:
             sdk_class_declarations = self.get_sdk_class_names(
                 obfuscation_info.get_smali_files()
             )
-            renamed_field_declarations: Set[str] = set()
-
-            # There is a field limit for dex files.
-            self.max_fields_to_add = (
-                obfuscation_info.get_remaining_fields_per_obfuscator()
+            renamed_field_declarations = self.rename_field_declarations(
+                obfuscation_info.get_smali_files(), obfuscation_info.interactive
             )
-            self.added_fields = 0
 
-            if obfuscation_info.is_multidex():
-                for index, dex_smali_files in enumerate(
-                    util.show_list_progress(
-                        obfuscation_info.get_multidex_smali_files(),
-                        interactive=obfuscation_info.interactive,
-                        unit="dex",
-                        description="Processing multidex",
-                    )
-                ):
-                    self.max_fields_to_add = (
-                        obfuscation_info.get_remaining_fields_per_obfuscator()[index]
-                    )
-                    self.added_fields = 0
-                    renamed_field_declarations.update(
-                        self.rename_field_declarations(
-                            dex_smali_files, obfuscation_info.interactive
-                        )
-                    )
-            else:
-                renamed_field_declarations = self.rename_field_declarations(
-                    obfuscation_info.get_smali_files(), obfuscation_info.interactive
-                )
-
-            # When renaming field references it makes no difference if this is a
-            # multidex application, since at this point we are not introducing any new
-            # field.
             self.rename_field_references(
                 renamed_field_declarations,
                 obfuscation_info.get_smali_files(),

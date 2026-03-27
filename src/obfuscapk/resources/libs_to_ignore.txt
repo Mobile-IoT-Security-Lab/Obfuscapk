@@ -466,3 +466,13 @@ uk/co/senab/actionbarpulltorefresh/
 v2/com/playhaven/
 xamarin/
 zfee/sdk/
+dagger/
+kotlin/
+kotlinx/
+timber/
+org/checkerframework/
+org/jetbrains/
+io/reactivex/
+javax/annotation/
+javax/inject/
+javax/annotation/processing/

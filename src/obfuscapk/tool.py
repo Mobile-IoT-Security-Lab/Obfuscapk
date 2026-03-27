@@ -83,9 +83,9 @@ class Apktool(object):
 
         decode_cmd: List[str] = [
             self.apktool_path,
-            "d",
             "--frame-path",
             tempfile.gettempdir(),
+            "d",
             apk_path,
             "-o",
             output_dir_path,
@@ -145,10 +145,10 @@ class Apktool(object):
 
         build_cmd: List[str] = [
             self.apktool_path,
-            "b",
             "--frame-path",
             tempfile.gettempdir(),
-            "--force",
+            "b",
+            "--force-all",
             source_dir_path,
             "-o",
             output_apk_path,
