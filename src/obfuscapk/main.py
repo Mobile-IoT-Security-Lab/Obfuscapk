@@ -58,6 +58,8 @@ def perform_obfuscation(
     key_password: str = None,
     ignore_packages_file: str = None,
     use_aapt2: bool = False,
+    cleanup: bool = False,
+    output_dir: str = "/output",
 ):
     """
     Apply the obfuscation techniques to an input application and generate an obfuscated
@@ -154,3 +156,23 @@ def perform_obfuscation(
         except Exception as e:
             logger.critical("Error during obfuscation: {0}".format(e), exc_info=True)
             raise
+    
+    if obfuscation.obfuscated_apk_path and os.path.isfile(obfuscation.obfuscated_apk_path):
+        final_apk_path = obfuscation.obfuscated_apk_path
+        
+        if output_dir:
+            if not os.path.isdir(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            new_final_path = os.path.join(output_dir, os.path.basename(final_apk_path))
+            logger.warning("Moving final APK to requested output directory: {0}".format(new_final_path))
+            import shutil
+            shutil.move(final_apk_path, new_final_path)
+            final_apk_path = new_final_path
+            
+        logger.warning("Obfuscated APK is available at: {0}".format(final_apk_path))
+
+    if cleanup and obfuscation.working_dir_path and os.path.isdir(obfuscation.working_dir_path):
+        logger.info("Cleaning up intermediate working directory: {0}".format(obfuscation.working_dir_path))
+        import shutil
+        shutil.rmtree(obfuscation.working_dir_path, ignore_errors=True)

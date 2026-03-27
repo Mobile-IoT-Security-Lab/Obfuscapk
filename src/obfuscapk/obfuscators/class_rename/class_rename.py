@@ -35,8 +35,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         self.class_name_to_smali_file: dict = {}
 
     def encrypt_identifier(self, identifier: str) -> str:
-        identifier_md5 = util.get_string_md5(identifier)
-        return "p{0}".format(identifier_md5.lower()[:8])
+        return util.get_length_preserved_hash(identifier)
 
     def slash_to_dot_notation_for_classes(
         self, rename_transformations: Dict[str, str]
@@ -85,12 +84,20 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                         continue
 
                     if not class_name:
-                        class_match = util.class_pattern.match(line)
+                        class_match = util.class_pattern.search(line)
                         if class_match:
+                            if " enum " in line:
+                                class_name = class_match.group("class_name")
+                                renamed_classes[class_name] = class_name
+                                out_file.write(line)
+                                continue
+
                             class_name = class_match.group("class_name")
 
-                            ignore_class = class_name.startswith(
-                                tuple(self.ignore_package_names)
+                            ignore_class = class_name and class_name.startswith(
+                                tuple(
+                                    "L{0}".format(p) for p in self.ignore_package_names
+                                )
                             )
 
                             # Split class name to its components and encrypt them.
@@ -136,7 +143,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
                     if annotation_flag and 'name = "' in line:
                         # Subclasses have to be renamed as well.
-                        subclass_match = self.subclass_name_pattern.match(line)
+                        subclass_match = self.subclass_name_pattern.search(line)
                         if subclass_match and not r_class:
                             subclass_name = subclass_match.group("subclass_name")
                             out_file.write(
@@ -215,7 +222,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                     # Rename classes used with the "classic" syntax
                     # (leading L and trailing ;).
                     class_names = util.class_name_pattern.findall(line)
-                    for class_name in class_names:
+                    for class_name in sorted(class_names, reverse=True, key=len):
                         if class_name in rename_transformations:
                             line = line.replace(
                                 class_name, rename_transformations[class_name]
@@ -299,7 +306,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                     for line in current_file:
                         if not class_name:
                             # Every smali file contains a class.
-                            class_match = util.class_pattern.match(line)
+                            class_match = util.class_pattern.search(line)
                             if class_match:
                                 self.class_name_to_smali_file[
                                     class_match.group("class_name")

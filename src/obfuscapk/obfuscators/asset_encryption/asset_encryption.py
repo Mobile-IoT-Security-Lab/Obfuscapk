@@ -19,6 +19,7 @@ class AssetEncryption(obfuscator_category.IEncryptionObfuscator):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+        self.is_adding_methods = True
         self.encryption_secret = "This-key-need-to-be-32-character"
 
     def obfuscate(self, obfuscation_info: Obfuscation):
@@ -75,7 +76,7 @@ class AssetEncryption(obfuscator_category.IEncryptionObfuscator):
                     asset_index_for_asset_names: List[int] = []
 
                     for line_number, line in enumerate(lines):
-                        invoke_match = open_asset_invoke_pattern.match(line)
+                        invoke_match = open_asset_invoke_pattern.search(line)
                         if invoke_match:
                             # Asset file open instruction.
                             asset_index.append(line_number)
@@ -97,7 +98,7 @@ class AssetEncryption(obfuscator_category.IEncryptionObfuscator):
                             # work anymore and this case is not handled by this
                             # obfuscator.
 
-                            string_match = util.const_string_pattern.match(
+                            string_match = util.const_string_pattern.search(
                                 lines[line_number]
                             )
                             if (

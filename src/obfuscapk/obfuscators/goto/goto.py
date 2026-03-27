@@ -42,7 +42,7 @@ class Goto(obfuscator_category.ICodeObfuscator):
                             out_file.write(line)
                             editing_method = True
 
-                        elif editing_method and util.locals_pattern.match(line):
+                        elif editing_method and util.locals_pattern.search(line):
                             out_file.write(line)
                             out_file.write("\n\tgoto/32 :after_last_instruction\n\n")
                             out_file.write("\t:before_first_instruction\n")

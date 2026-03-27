@@ -1,3 +1,3 @@
 #!/usr/bin/env python3
 
-from obfuscapk.obfuscators.arithmetic_branch.arithmetic_branch import ArithmeticBranch
+from .arithmetic_branch import ArithmeticBranch

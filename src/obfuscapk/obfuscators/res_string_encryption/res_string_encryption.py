@@ -22,6 +22,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+        self.is_adding_methods = True
 
         self.encryption_secret = "This-key-need-to-be-32-character"
 
@@ -133,7 +134,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                                 # Method declaration reached, no more field declarations
                                 # from now on.
                                 break
-                            field_match = string_res_field_pattern.match(line)
+                            field_match = string_res_field_pattern.search(line)
                             if field_match:
                                 # String name and id declaration.
                                 string_id_to_string_name[
@@ -147,7 +148,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                                 # Method declaration reached, no more field declarations
                                 # from now on.
                                 break
-                            field_match = string_res_field_pattern.match(line)
+                            field_match = string_res_field_pattern.search(line)
                             if field_match:
                                 # String array name and id declaration.
                                 string_array_id_to_string_name[
@@ -194,19 +195,19 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                     # registers available. We need this information because the invoke
                     # instruction that we need later won't take registers with values
                     # greater than 15.
-                    match = util.locals_pattern.match(line)
+                    match = util.locals_pattern.search(line)
                     if match:
                         current_local_count = int(match.group("local_count"))
                         continue
 
-                    string_res_match = load_string_res_pattern.match(line)
+                    string_res_match = load_string_res_pattern.search(line)
                     if string_res_match:
                         string_index.append(line_number)
                         string_register.append(string_res_match.group("param_register"))
                         string_local_count.append(current_local_count)
                         continue
 
-                    string_array_res_match = load_string_array_res_pattern.match(line)
+                    string_array_res_match = load_string_array_res_pattern.search(line)
                     if string_array_res_match:
                         string_array_index.append(line_number)
                         string_array_register.append(
@@ -233,7 +234,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                         # variable instead of the resource id, it won't work anymore
                         # and this case is not handled by this obfuscator.
 
-                        id_match = string_id_pattern.match(lines[line_number])
+                        id_match = string_id_pattern.search(lines[line_number])
                         if (
                             id_match
                             and id_match.group("register")
@@ -270,7 +271,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                         # a variable instead of the resource id, it won't work anymore
                         # and this case is not handled by this obfuscator.
 
-                        id_match = string_array_id_pattern.match(lines[line_number])
+                        id_match = string_array_id_pattern.search(lines[line_number])
                         if (
                             id_match
                             and id_match.group("register")
@@ -306,7 +307,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                         # proceed with the encryption, but if it uses a p<number>
                         # register, before encrypting we have to check if
                         # <number> + locals <= 15.
-                        move_result_match = move_result_obj_pattern.match(
+                        move_result_match = move_result_obj_pattern.search(
                             lines[line_number]
                         )
                         if move_result_match:
@@ -349,7 +350,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                         # can proceed with the encryption, but if it uses a p<number>
                         # register, before encrypting we have to check if
                         # <number> + locals <= 15.
-                        move_result_match = move_result_obj_pattern.match(
+                        move_result_match = move_result_obj_pattern.search(
                             lines[line_number]
                         )
                         if move_result_match:

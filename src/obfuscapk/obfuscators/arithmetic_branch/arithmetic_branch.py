@@ -54,7 +54,7 @@ class ArithmeticBranch(obfuscator_category.ICodeObfuscator):
                         elif editing_method:
                             # Inside method.
                             out_file.write(line)
-                            match = util.locals_pattern.match(line)
+                            match = util.locals_pattern.search(line)
                             if match and int(match.group("local_count")) >= 2:
                                 # If there are at least 2 registers available, add a
                                 # fake branch at the beginning of the method: one branch

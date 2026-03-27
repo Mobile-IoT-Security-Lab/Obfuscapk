@@ -21,6 +21,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+        self.is_adding_methods = True
 
         self.encryption_secret = "This-key-need-to-be-32-character"
 
@@ -100,7 +101,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 current_local_count = 0
                 for line_number, line in enumerate(lines):
                     if not class_name:
-                        class_match = util.class_pattern.match(line)
+                        class_match = util.class_pattern.search(line)
                         if class_match:
                             class_name = class_match.group("class_name")
                             continue
@@ -115,7 +116,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                         static_constructor_line = line_number
                         continue
 
-                    static_string_match = static_string_pattern.match(line)
+                    static_string_match = static_string_pattern.search(line)
                     if static_string_match and static_string_match.group(
                         "string_value"
                     ):
@@ -135,7 +136,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                     # it's greater than 15 we won't encrypt it (the invoke instruction
                     # that we need later won't take registers with values greater
                     # than 15).
-                    match = util.locals_pattern.match(line)
+                    match = util.locals_pattern.search(line)
                     if match:
                         current_local_count = int(match.group("local_count"))
                         continue
@@ -143,7 +144,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                     # If the constant string has a register v0-v15 we can proceed with
                     # the encryption, but if it uses a p<number> register, before
                     # encrypting we have to check if <number> + locals <= 15.
-                    string_match = util.const_string_pattern.match(line)
+                    string_match = util.const_string_pattern.search(line)
                     if string_match and string_match.group("string"):
                         reg_type = string_match.group("register")[:1]
                         reg_number = int(string_match.group("register")[1:])
@@ -200,7 +201,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 if static_string_encryption_code != "":
                     if static_constructor_line != -1:
                         # Add static string encryption to the existing static constructor.
-                        local_match = util.locals_pattern.match(
+                        local_match = util.locals_pattern.search(
                             lines[static_constructor_line + 1]
                         )
                         if local_match:

@@ -16,6 +16,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+        self.is_adding_methods = True
 
         self.android_class_names: Set[str] = set(util.get_android_class_names())
 
@@ -23,6 +24,8 @@ class Reflection(obfuscator_category.ICodeObfuscator):
 
         # Will be populated before running the reflection obfuscator.
         self.class_name_to_smali_file: dict = {}
+        self.class_is_public_cache: dict = {}
+        self.method_is_public_cache: dict = {}
 
         # Keep track of the length of the added instructions for reflection obfuscator,
         # since there is a limit for the number of maximum instructions in a try catch
@@ -77,33 +80,47 @@ class Reflection(obfuscator_category.ICodeObfuscator):
         }
 
     def class_is_public_and_declared_in_smali(self, class_name: str) -> bool:
+        if class_name in self.class_is_public_cache:
+            return self.class_is_public_cache[class_name]
+
         smali_file: str = self.class_name_to_smali_file.get(class_name, None)
 
         # The smali of this class is not present (this is probably a system class).
         if not smali_file:
+            self.class_is_public_cache[class_name] = False
             return False
 
         with open(smali_file, "r", encoding="utf-8") as current_file:
             for line in current_file:
                 # Check if this is a public non abstract class.
-                class_match = util.class_pattern.match(line)
+                class_match = util.class_pattern.search(line)
                 if class_match:
                     if " public " in line and " abstract " not in line:
+                        self.class_is_public_cache[class_name] = True
                         return True
                     else:
+                        self.class_is_public_cache[class_name] = False
                         return False
+
+        self.class_is_public_cache[class_name] = False
+        return False
 
     def method_is_all_public(
         self, class_name: str, method_signature: str, param_string: str
     ) -> bool:
+        cache_key = f"{class_name}->{method_signature}"
+        if cache_key in self.method_is_public_cache:
+            return self.method_is_public_cache[cache_key]
+
         if not self.class_is_public_and_declared_in_smali(class_name):
+            self.method_is_public_cache[cache_key] = False
             return False
 
         smali_file: str = self.class_name_to_smali_file[class_name]
         with open(smali_file, "r", encoding="utf-8") as current_file:
             for line in current_file:
                 if " public " in line:
-                    method_match = util.method_pattern.match(line)
+                    method_match = util.method_pattern.search(line)
                     if method_match:
                         signature = (
                             "{method_name}({method_param})"
@@ -129,10 +146,13 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                 if not self.class_is_public_and_declared_in_smali(
                                     param
                                 ):
+                                    self.method_is_public_cache[cache_key] = False
                                     return False
 
+                            self.method_is_public_cache[cache_key] = True
                             return True
 
+        self.method_is_public_cache[cache_key] = False
         return False
 
     def split_method_params(self, param_string: str) -> List[str]:
@@ -376,6 +396,8 @@ class Reflection(obfuscator_category.ICodeObfuscator):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
         try:
+            max_methods_to_add = obfuscation_info.get_remaining_methods_per_obfuscator()
+
             for smali_file in util.show_list_progress(
                 obfuscation_info.get_smali_files(),
                 interactive=obfuscation_info.interactive,
@@ -386,18 +408,21 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                     for line in current_file:
                         if not class_name:
                             # Every smali file contains a class.
-                            class_match = util.class_pattern.match(line)
+                            class_match = util.class_pattern.search(line)
                             if class_match:
                                 self.class_name_to_smali_file[
                                     class_match.group("class_name")
                                 ] = smali_file
                                 break
 
-            obfuscator_smali_code: str = ""
+            clinit_calls_code = ""
+            additional_methods_code = ""
+            current_chunk_code = ""
+            chunk_index = 0
 
             move_result_pattern = re.compile(
-                r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
-            )
+                    r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
+                )
 
             for smali_file in util.show_list_progress(
                 obfuscation_info.get_smali_files(),
@@ -408,232 +433,240 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                     'Obfuscating using reflection in file "{0}"'.format(smali_file)
                 )
 
-                # There is no space for further reflection instructions.
-                if (
-                    self.obfuscator_instructions_length
-                    >= self.obfuscator_instructions_limit
-                ):
-                    break
-
                 with open(smali_file, "r", encoding="utf-8") as current_file:
                     lines = current_file.readlines()
 
-                # Line numbers where a method is declared.
-                method_index: List[int] = []
+                    # Line numbers where a method is declared.
+                    method_index: List[int] = []
 
-                # For each method in method_index, True if there are enough registers
-                # to perform some operations by using reflection, False otherwise.
-                method_is_reflectable: List[bool] = []
+                    # For each method in method_index, True if there are enough registers
+                    # to perform some operations by using reflection, False otherwise.
+                    method_is_reflectable: List[bool] = []
 
-                # The number of local registers of each method in method_index.
-                method_local_count: List[int] = []
+                    # The number of local registers of each method in method_index.
+                    method_local_count: List[int] = []
 
-                # Find the method declarations in this smali file.
-                for line_number, line in enumerate(lines):
-                    method_match = util.method_pattern.match(line)
-                    if method_match:
-                        method_index.append(line_number)
+                    # Find the method declarations in this smali file.
+                    for line_number, line in enumerate(lines):
+                        method_match = util.method_pattern.search(line)
+                        if method_match:
+                            method_index.append(line_number)
 
-                        param_count = self.count_needed_registers(
-                            self.split_method_params(method_match.group("method_param"))
-                        )
-
-                        # Save the number of local registers of this method.
-                        local_count = 16
-                        local_match = util.locals_pattern.match(lines[line_number + 1])
-                        if local_match:
-                            local_count = int(local_match.group("local_count"))
-                            method_local_count.append(local_count)
-                        else:
-                            # For some reason the locals declaration was not found where
-                            # it should be, so assume the local registers are all used.
-                            method_local_count.append(local_count)
-
-                        # If there are enough registers available we can perform some
-                        # reflection operations.
-                        if param_count + local_count <= 11:
-                            method_is_reflectable.append(True)
-                        else:
-                            method_is_reflectable.append(False)
-
-                # Look for method invocations inside the methods declared in this
-                # smali file, and change normal invocations with invocations through
-                # reflection.
-                for method_number, index in enumerate(method_index):
-                    # If there are enough registers for reflection operations, look for
-                    # method invocations inside each method's body.
-                    if method_is_reflectable[method_number]:
-                        current_line_number = index
-                        while not lines[current_line_number].startswith(".end method"):
-                            # There is no space for further reflection instructions.
-                            if (
-                                self.obfuscator_instructions_length
-                                >= self.obfuscator_instructions_limit
-                            ):
-                                break
-
-                            current_line_number += 1
-
-                            invoke_match = util.invoke_pattern.match(
-                                lines[current_line_number]
+                            param_count = self.count_needed_registers(
+                                self.split_method_params(method_match.group("method_param"))
                             )
 
-                            if (
-                                invoke_match
-                                and "<init>" not in lines[current_line_number]
-                            ):
-                                # The method belongs to an Android class or is
-                                # invoked on an array.
-                                if invoke_match.group(
-                                    "invoke_object"
-                                ) in self.android_class_names or invoke_match.group(
-                                    "invoke_object"
-                                ).startswith(
-                                    "["
-                                ):
-                                    continue
+                            # Save the number of local registers of this method.
+                            local_count = 16
+                            local_match = util.locals_pattern.search(lines[line_number + 1])
+                            if local_match:
+                                local_count = int(local_match.group("local_count"))
+                                method_local_count.append(local_count)
+                            else:
+                                # For some reason the locals declaration was not found where
+                                # it should be, so assume the local registers are all used.
+                                method_local_count.append(local_count)
 
-                                method_signature = (
-                                    "{method_name}({method_param})"
-                                    "{method_return}".format(
-                                        method_name=invoke_match.group("invoke_method"),
-                                        method_param=invoke_match.group("invoke_param"),
-                                        method_return=invoke_match.group(
-                                            "invoke_return"
-                                        ),
-                                    )
+                            # If there are enough registers available we can perform some
+                            # reflection operations.
+                            if param_count + local_count <= 11:
+                                method_is_reflectable.append(True)
+                            else:
+                                method_is_reflectable.append(False)
+
+                    # Look for method invocations inside the methods declared in this
+                    # smali file, and change normal invocations with invocations through
+                    # reflection.
+                    for method_number, index in enumerate(method_index):
+                        # If there are enough registers for reflection operations, look for
+                        # method invocations inside each method's body.
+                        if method_is_reflectable[method_number]:
+                            current_line_number = index
+                            while not lines[current_line_number].startswith(".end method"):
+                                current_line_number += 1
+
+                                invoke_match = util.invoke_pattern.search(
+                                    lines[current_line_number]
                                 )
-
-                                # The method to reflect has to be public, has to be
-                                # declared in a public class and all its parameters
-                                # have to be public.
-                                if not self.method_is_all_public(
-                                    invoke_match.group("invoke_object"),
-                                    method_signature,
-                                    invoke_match.group("invoke_param"),
-                                ):
-                                    continue
 
                                 if (
-                                    invoke_match.group("invoke_type")
-                                    == "invoke-virtual"
+                                    invoke_match
+                                    and "<init>" not in lines[current_line_number]
                                 ):
-                                    tmp_is_virtual = True
-                                elif (
-                                    invoke_match.group("invoke_type") == "invoke-static"
-                                ):
-                                    tmp_is_virtual = False
-                                else:
-                                    continue
-
-                                tmp_register = invoke_match.group("invoke_pass")
-                                tmp_class_name = invoke_match.group("invoke_object")
-                                tmp_method = invoke_match.group("invoke_method")
-                                tmp_param = invoke_match.group("invoke_param")
-                                tmp_return_type = invoke_match.group("invoke_return")
-
-                                # Check if the method invocation result is used in
-                                # the following lines.
-                                for move_result_index in range(
-                                    current_line_number + 1,
-                                    min(current_line_number + 10, len(lines) - 1),
-                                ):
-                                    if "invoke-" in lines[move_result_index]:
-                                        # New method invocation, the previous method
-                                        # result is not used.
+                                    if self.methods_with_reflection >= len(max_methods_to_add):
                                         break
+                                    # The method belongs to an Android class or is
+                                    # invoked on an array.
+                                    if invoke_match.group(
+                                        "invoke_object"
+                                    ) in self.android_class_names or invoke_match.group(
+                                        "invoke_object"
+                                    ).startswith(
+                                        "["
+                                    ):
+                                        continue
 
-                                    move_result_match = move_result_pattern.match(
-                                        lines[move_result_index]
-                                    )
-                                    if move_result_match:
-                                        tmp_result_register = move_result_match.group(
-                                            "register"
+                                    method_signature = (
+                                        "{method_name}({method_param})"
+                                        "{method_return}".format(
+                                            method_name=invoke_match.group("invoke_method"),
+                                            method_param=invoke_match.group("invoke_param"),
+                                            method_return=invoke_match.group(
+                                                "invoke_return"
+                                            ),
                                         )
+                                    )
 
-                                        # Fix the move-result instruction after the
-                                        # method invocation.
-                                        new_move_result = ""
-                                        if tmp_return_type in self.primitive_types:
-                                            new_move_result += (
-                                                "\tmove-result-object "
-                                                "{result_register}\n\n"
-                                                "\tcheck-cast {result_register}, "
-                                                "{result_class}\n\n".format(
-                                                    result_register=tmp_result_register,
-                                                    result_class=self.type_dict[
-                                                        tmp_return_type
-                                                    ],
-                                                )
+                                    # The method to reflect has to be public, has to be
+                                    # declared in a public class and all its parameters
+                                    # have to be public.
+                                    if not self.method_is_all_public(
+                                        invoke_match.group("invoke_object"),
+                                        method_signature,
+                                        invoke_match.group("invoke_param"),
+                                    ):
+                                        continue
+
+                                    if (
+                                        invoke_match.group("invoke_type")
+                                        == "invoke-virtual"
+                                    ):
+                                        tmp_is_virtual = True
+                                    elif (
+                                        invoke_match.group("invoke_type") == "invoke-static"
+                                    ):
+                                        tmp_is_virtual = False
+                                    else:
+                                        continue
+
+                                    tmp_register = invoke_match.group("invoke_pass")
+                                    tmp_class_name = invoke_match.group("invoke_object")
+                                    tmp_method = invoke_match.group("invoke_method")
+                                    tmp_param = invoke_match.group("invoke_param")
+                                    tmp_return_type = invoke_match.group("invoke_return")
+
+                                    # Check if the method invocation result is used in
+                                    # the following lines.
+                                    for move_result_index in range(
+                                        current_line_number + 1,
+                                        min(current_line_number + 10, len(lines) - 1),
+                                    ):
+                                        if "invoke-" in lines[move_result_index]:
+                                            # New method invocation, the previous method
+                                            # result is not used.
+                                            break
+
+                                        move_result_match = move_result_pattern.search(
+                                            lines[move_result_index]
+                                        )
+                                        if move_result_match:
+                                            tmp_result_register = move_result_match.group(
+                                                "register"
                                             )
 
-                                            new_move_result += (
-                                                "\tinvoke-virtual "
-                                                "{{{result_register}}}, {cast}\n\n".format(
-                                                    result_register=tmp_result_register,
-                                                    cast=self.reverse_cast_dict[
-                                                        tmp_return_type
-                                                    ],
-                                                )
-                                            )
-
-                                            if (
-                                                tmp_return_type == "J"
-                                                or tmp_return_type == "D"
-                                            ):
+                                            # Fix the move-result instruction after the
+                                            # method invocation.
+                                            new_move_result = ""
+                                            if tmp_return_type in self.primitive_types:
                                                 new_move_result += (
-                                                    "\tmove-result-wide "
-                                                    "{result_register}\n".format(
-                                                        result_register=tmp_result_register
+                                                    "\tmove-result-object "
+                                                    "{result_register}\n\n"
+                                                    "\tcheck-cast {result_register}, "
+                                                    "{result_class}\n\n".format(
+                                                        result_register=tmp_result_register,
+                                                        result_class=self.type_dict[
+                                                            tmp_return_type
+                                                        ],
                                                     )
                                                 )
+
+                                                new_move_result += (
+                                                    "\tinvoke-virtual "
+                                                    "{{{result_register}}}, {cast}\n\n".format(
+                                                        result_register=tmp_result_register,
+                                                        cast=self.reverse_cast_dict[
+                                                            tmp_return_type
+                                                        ],
+                                                    )
+                                                )
+
+                                                if (
+                                                    tmp_return_type == "J"
+                                                    or tmp_return_type == "D"
+                                                ):
+                                                    new_move_result += (
+                                                        "\tmove-result-wide "
+                                                        "{result_register}\n".format(
+                                                            result_register=tmp_result_register
+                                                        )
+                                                    )
+                                                else:
+                                                    new_move_result += (
+                                                        "\tmove-result "
+                                                        "{result_register}\n".format(
+                                                            result_register=tmp_result_register
+                                                        )
+                                                    )
+
                                             else:
                                                 new_move_result += (
-                                                    "\tmove-result "
-                                                    "{result_register}\n".format(
-                                                        result_register=tmp_result_register
+                                                    "\tmove-result-object "
+                                                    "{result_register}\n\n"
+                                                    "\tcheck-cast {result_register}, "
+                                                    "{return_type}\n".format(
+                                                        result_register=tmp_result_register,
+                                                        return_type=tmp_return_type,
                                                     )
                                                 )
 
-                                        else:
-                                            new_move_result += (
-                                                "\tmove-result-object "
-                                                "{result_register}\n\n"
-                                                "\tcheck-cast {result_register}, "
-                                                "{return_type}\n".format(
-                                                    result_register=tmp_result_register,
-                                                    return_type=tmp_return_type,
-                                                )
-                                            )
+                                            lines[move_result_index] = new_move_result
 
-                                        lines[move_result_index] = new_move_result
+                                    # Add the original method to the list of methods
+                                    # using reflection.
+                                    current_chunk_code += self.add_smali_reflection_code(
+                                        tmp_class_name, tmp_method, tmp_param
+                                    )
 
-                                # Add the original method to the list of methods
-                                # using reflection.
-                                obfuscator_smali_code += self.add_smali_reflection_code(
-                                    tmp_class_name, tmp_method, tmp_param
-                                )
+                                    if self.obfuscator_instructions_length >= self.obfuscator_instructions_limit:
+                                        method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                                        method_decl += current_chunk_code
+                                        method_decl += "\n\treturn-void\n.end method\n\n"
+                                    
+                                        additional_methods_code += method_decl
+                                        clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(chunk_index)
+                                    
+                                        self.obfuscator_instructions_length = 0
+                                        current_chunk_code = ""
+                                        chunk_index += 1
 
-                                # Change the original code with code using reflection.
-                                lines[
-                                    current_line_number
-                                ] = self.create_reflection_method(
-                                    self.methods_with_reflection,
-                                    method_local_count[method_number],
-                                    tmp_is_virtual,
-                                    tmp_register,
-                                    tmp_param,
-                                )
+                                    # Change the original code with code using reflection.
+                                    lines[
+                                        current_line_number
+                                    ] = self.create_reflection_method(
+                                        self.methods_with_reflection,
+                                        method_local_count[method_number],
+                                        tmp_is_virtual,
+                                        tmp_register,
+                                        tmp_param,
+                                    )
 
-                                self.methods_with_reflection += 1
+                                    self.methods_with_reflection += 1
 
-                                # Add the registers needed for performing reflection.
-                                lines[index + 1] = "\t.locals {0}\n".format(
-                                    method_local_count[method_number] + 4
-                                )
+                                    # Add the registers needed for performing reflection.
+                                    lines[index + 1] = "\t.locals {0}\n".format(
+                                        method_local_count[method_number] + 4
+                                    )
 
-                with open(smali_file, "w", encoding="utf-8") as current_file:
-                    current_file.writelines(lines)
+                    with open(smali_file, "w", encoding="utf-8") as current_file:
+                        current_file.writelines(lines)
+
+            if current_chunk_code:
+                method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                method_decl += current_chunk_code
+                method_decl += "\n\treturn-void\n.end method\n\n"
+                
+                additional_methods_code += method_decl
+                clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(chunk_index)
 
             # Add to the app the code needed for the reflection obfuscator. The code
             # can be put in any smali directory, since it will be moved to the correct
@@ -642,8 +675,9 @@ class Reflection(obfuscator_category.ICodeObfuscator):
             destination_file = os.path.join(destination_dir, "ApiReflection.smali")
             with open(destination_file, "w", encoding="utf-8") as api_reflection_smali:
                 reflection_code = util.get_api_reflection_smali_code().replace(
-                    "#!code_to_replace!#", obfuscator_smali_code
+                    "#!code_to_replace!#", clinit_calls_code
                 )
+                reflection_code += additional_methods_code
                 api_reflection_smali.write(reflection_code)
 
         except Exception as e:
