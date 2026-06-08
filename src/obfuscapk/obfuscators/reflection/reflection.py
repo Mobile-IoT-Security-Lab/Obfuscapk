@@ -5,8 +5,7 @@ import os
 import re
 from typing import List, Set
 
-from obfuscapk import obfuscator_category
-from obfuscapk import util
+from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
 
 
@@ -123,8 +122,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                     method_match = util.method_pattern.search(line)
                     if method_match:
                         signature = (
-                            "{method_name}({method_param})"
-                            "{method_return}".format(
+                            "{method_name}({method_param}){method_return}".format(
                                 method_name=method_match.group("method_name"),
                                 method_param=method_match.group("method_param"),
                                 method_return=method_match.group("method_return"),
@@ -421,8 +419,8 @@ class Reflection(obfuscator_category.ICodeObfuscator):
             chunk_index = 0
 
             move_result_pattern = re.compile(
-                    r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
-                )
+                r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
+            )
 
             for smali_file in util.show_list_progress(
                 obfuscation_info.get_smali_files(),
@@ -453,12 +451,16 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                             method_index.append(line_number)
 
                             param_count = self.count_needed_registers(
-                                self.split_method_params(method_match.group("method_param"))
+                                self.split_method_params(
+                                    method_match.group("method_param")
+                                )
                             )
 
                             # Save the number of local registers of this method.
                             local_count = 16
-                            local_match = util.locals_pattern.search(lines[line_number + 1])
+                            local_match = util.locals_pattern.search(
+                                lines[line_number + 1]
+                            )
                             if local_match:
                                 local_count = int(local_match.group("local_count"))
                                 method_local_count.append(local_count)
@@ -482,7 +484,9 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                         # method invocations inside each method's body.
                         if method_is_reflectable[method_number]:
                             current_line_number = index
-                            while not lines[current_line_number].startswith(".end method"):
+                            while not lines[current_line_number].startswith(
+                                ".end method"
+                            ):
                                 current_line_number += 1
 
                                 invoke_match = util.invoke_pattern.search(
@@ -493,7 +497,12 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                     invoke_match
                                     and "<init>" not in lines[current_line_number]
                                 ):
-                                    if self.methods_with_reflection >= len(max_methods_to_add):
+                                    limit = (
+                                        max_methods_to_add
+                                        if isinstance(max_methods_to_add, int)
+                                        else sum(max_methods_to_add)
+                                    )
+                                    if self.methods_with_reflection >= limit:
                                         break
                                     # The method belongs to an Android class or is
                                     # invoked on an array.
@@ -501,16 +510,18 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                         "invoke_object"
                                     ) in self.android_class_names or invoke_match.group(
                                         "invoke_object"
-                                    ).startswith(
-                                        "["
-                                    ):
+                                    ).startswith("["):
                                         continue
 
                                     method_signature = (
                                         "{method_name}({method_param})"
                                         "{method_return}".format(
-                                            method_name=invoke_match.group("invoke_method"),
-                                            method_param=invoke_match.group("invoke_param"),
+                                            method_name=invoke_match.group(
+                                                "invoke_method"
+                                            ),
+                                            method_param=invoke_match.group(
+                                                "invoke_param"
+                                            ),
                                             method_return=invoke_match.group(
                                                 "invoke_return"
                                             ),
@@ -533,7 +544,8 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                     ):
                                         tmp_is_virtual = True
                                     elif (
-                                        invoke_match.group("invoke_type") == "invoke-static"
+                                        invoke_match.group("invoke_type")
+                                        == "invoke-static"
                                     ):
                                         tmp_is_virtual = False
                                     else:
@@ -543,7 +555,9 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                     tmp_class_name = invoke_match.group("invoke_object")
                                     tmp_method = invoke_match.group("invoke_method")
                                     tmp_param = invoke_match.group("invoke_param")
-                                    tmp_return_type = invoke_match.group("invoke_return")
+                                    tmp_return_type = invoke_match.group(
+                                        "invoke_return"
+                                    )
 
                                     # Check if the method invocation result is used in
                                     # the following lines.
@@ -560,8 +574,8 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                             lines[move_result_index]
                                         )
                                         if move_result_match:
-                                            tmp_result_register = move_result_match.group(
-                                                "register"
+                                            tmp_result_register = (
+                                                move_result_match.group("register")
                                             )
 
                                             # Fix the move-result instruction after the
@@ -623,31 +637,42 @@ class Reflection(obfuscator_category.ICodeObfuscator):
 
                                     # Add the original method to the list of methods
                                     # using reflection.
-                                    current_chunk_code += self.add_smali_reflection_code(
-                                        tmp_class_name, tmp_method, tmp_param
+                                    current_chunk_code += (
+                                        self.add_smali_reflection_code(
+                                            tmp_class_name, tmp_method, tmp_param
+                                        )
                                     )
 
-                                    if self.obfuscator_instructions_length >= self.obfuscator_instructions_limit:
-                                        method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                                    if (
+                                        self.obfuscator_instructions_length
+                                        >= self.obfuscator_instructions_limit
+                                    ):
+                                        method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(
+                                            chunk_index
+                                        )
                                         method_decl += current_chunk_code
-                                        method_decl += "\n\treturn-void\n.end method\n\n"
-                                    
+                                        method_decl += (
+                                            "\n\treturn-void\n.end method\n\n"
+                                        )
+
                                         additional_methods_code += method_decl
-                                        clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(chunk_index)
-                                    
+                                        clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(
+                                            chunk_index
+                                        )
+
                                         self.obfuscator_instructions_length = 0
                                         current_chunk_code = ""
                                         chunk_index += 1
 
                                     # Change the original code with code using reflection.
-                                    lines[
-                                        current_line_number
-                                    ] = self.create_reflection_method(
-                                        self.methods_with_reflection,
-                                        method_local_count[method_number],
-                                        tmp_is_virtual,
-                                        tmp_register,
-                                        tmp_param,
+                                    lines[current_line_number] = (
+                                        self.create_reflection_method(
+                                            self.methods_with_reflection,
+                                            method_local_count[method_number],
+                                            tmp_is_virtual,
+                                            tmp_register,
+                                            tmp_param,
+                                        )
                                     )
 
                                     self.methods_with_reflection += 1
@@ -661,12 +686,18 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                         current_file.writelines(lines)
 
             if current_chunk_code:
-                method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                method_decl = (
+                    "\n.method private static init{0}()V\n\t.locals 4\n\n".format(
+                        chunk_index
+                    )
+                )
                 method_decl += current_chunk_code
                 method_decl += "\n\treturn-void\n.end method\n\n"
-                
+
                 additional_methods_code += method_decl
-                clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(chunk_index)
+                clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/ApiReflection;->init{0}()V\n\n".format(
+                    chunk_index
+                )
 
             # Add to the app the code needed for the reflection obfuscator. The code
             # can be put in any smali directory, since it will be moved to the correct
