@@ -2,4 +2,3 @@ pycryptodome==3.23.0
 pytest-cov==7.1.0
 tqdm==4.68.1
 vt-py==0.22.0
-Yapsy==1.12.2
