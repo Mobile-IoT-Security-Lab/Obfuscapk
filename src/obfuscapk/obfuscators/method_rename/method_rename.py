@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import json
 import logging
+import os
 from typing import List, Set
 
-from obfuscapk import obfuscator_category
-from obfuscapk import util
+from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
 
 
@@ -39,7 +40,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
                 skip_remaining_lines = False
                 class_name = None
-                
+
                 for line in in_file:
                     if skip_remaining_lines:
                         out_file.write(line)
@@ -79,25 +80,29 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         old_name = method_match.group("method_name")
                         params = method_match.group("method_param")
                         returns = method_match.group("method_return")
-                        
+
                         full_signature = "{0}({1}){2}".format(old_name, params, returns)
                         partial_signature = "({0}){1}".format(params, returns)
-                        
+
                         mapping_key = "{0}{1}".format(old_name, partial_signature)
-                        
+
                         if mapping_key not in self.method_mapping:
-                            self.method_mapping[mapping_key] = "m{0}".format(self.method_counter)
+                            self.method_mapping[mapping_key] = "m{0}".format(
+                                self.method_counter
+                            )
                             self.method_counter += 1
-                        
+
                         new_name = self.method_mapping[mapping_key]
-                        
+
                         out_file.write(
                             line.replace(
                                 "{0}(".format(old_name),
                                 "{0}(".format(new_name),
                             )
                         )
-                        renamed_methods.add("{0}->{1}".format(class_name, full_signature))
+                        renamed_methods.add(
+                            "{0}->{1}".format(class_name, full_signature)
+                        )
                     else:
                         out_file.write(line)
 
@@ -121,9 +126,9 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         old_name = invoke_match.group("invoke_method")
                         params = invoke_match.group("invoke_param")
                         returns = invoke_match.group("invoke_return")
-                        
+
                         mapping_key = "{0}({1}){2}".format(old_name, params, returns)
-                        
+
                         if mapping_key in self.method_mapping:
                             new_name = self.method_mapping[mapping_key]
                             out_file.write(
@@ -156,6 +161,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                 obfuscation_info.interactive,
             )
 
+            out_dir = os.path.dirname(os.path.abspath(obfuscation_info.apk_path))
+            apk_name = os.path.splitext(os.path.basename(obfuscation_info.apk_path))[0]
+            out_file = os.path.join(out_dir, f"{apk_name}_method_mapping.json")
+            self.export_mapping(self.method_mapping, out_file)
+
         except Exception as e:
             self.logger.error(
                 'Error during execution of "{0}" obfuscator: {1}'.format(
@@ -166,3 +176,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
 
         finally:
             obfuscation_info.used_obfuscators.append(self.__class__.__name__)
+
+    def export_mapping(self, mapping: dict, out_file: str):
+        with open(out_file, "w") as f:
+            json.dump(mapping, f, indent=4)

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
+import json
 import logging
 import os
 import re
 import xml.etree.cElementTree as Xml
-from typing import List, Set, Dict, Union
+from typing import Dict, List, Set, Union
 from xml.etree.cElementTree import Element
 
-from obfuscapk import obfuscator_category
-from obfuscapk import util
+from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
 
 
@@ -46,7 +46,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         for old_name, new_name in rename_transformations.items():
             dot_rename_transformations[
                 old_name[1:-1].replace("/", ".").replace("$", ".")
-            ] = (new_name[1:-1].replace("/", ".").replace("$", "."))
+            ] = new_name[1:-1].replace("/", ".").replace("$", ".")
 
         return dot_rename_transformations
 
@@ -353,6 +353,11 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 obfuscation_info.get_smali_files(), obfuscation_info.interactive
             )
 
+            out_dir = os.path.dirname(os.path.abspath(obfuscation_info.apk_path))
+            apk_name = os.path.splitext(os.path.basename(obfuscation_info.apk_path))[0]
+            out_file = os.path.join(out_dir, f"{apk_name}_class_mapping.json")
+            self.export_mapping(class_rename_transformations, out_file)
+
             # Update renamed classes through all the smali files.
             self.rename_class_usages_in_smali(
                 obfuscation_info.get_smali_files(),
@@ -377,3 +382,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         finally:
             obfuscation_info.used_obfuscators.append(self.__class__.__name__)
+
+    def export_mapping(self, mapping: dict, out_file: str):
+        with open(out_file, "w") as f:
+            json.dump(mapping, f, indent=4)
