@@ -1,10 +1,10 @@
-FROM python:3.9-slim-bookworm
+FROM python:3.14.5-slim-trixie
 
-ENV APKTOOL_VERSION="2.9.3"
+ENV APKTOOL_VERSION="3.0.2"
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-17-jre-headless \
+    openjdk-25-jre-headless \
     wget \
     unzip \
     zipalign \
