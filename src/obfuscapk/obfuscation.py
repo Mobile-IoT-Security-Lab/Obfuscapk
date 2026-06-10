@@ -345,7 +345,7 @@ class Obfuscation(object):
             try:
                 if self.is_bundle:
                     bundledecompiler.decode(
-                        self.apk_path, self._decoded_apk_path, force=False
+                        self.apk_path, self._decoded_apk_path, force=True
                     )
                 else:
                     apktool.decode(self.apk_path, self._decoded_apk_path, force=True)
@@ -361,17 +361,9 @@ class Obfuscation(object):
                 self.strip_debug_info()
 
                 # Path to the decoded manifest file.
-                if self.is_bundle:
-                    self._manifest_file = os.path.join(
-                        self._decoded_apk_path,
-                        "base",
-                        "manifest",
-                        "AndroidManifest.xml",
-                    )
-                else:
-                    self._manifest_file = os.path.join(
-                        self._decoded_apk_path, "AndroidManifest.xml"
-                    )
+                self._manifest_file = os.path.join(
+                    self._decoded_apk_path, "AndroidManifest.xml"
+                )
 
                 if self.ignore_libs:
                     # Normalize paths for the current OS ('.join(x, "")' is used to add
@@ -747,6 +739,10 @@ class Obfuscation(object):
             if self.is_bundle:
                 aabsigner.sign(
                     self.obfuscated_apk_path,
+                    self.keystore_file,
+                    self.keystore_password,
+                    self.key_alias,
+                    self.key_password,
                 )
             else:
                 apksigner.resign(
