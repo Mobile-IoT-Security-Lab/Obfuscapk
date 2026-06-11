@@ -2,14 +2,9 @@
 
 import logging
 import os
-import platform
 import shutil
 import subprocess
-import tempfile
 import zipfile
-from typing import List
-
-from obfuscapk.tool import Apktool
 
 
 class BundleDecompiler(object):
@@ -18,20 +13,16 @@ class BundleDecompiler(object):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
 
-        self.bundletool = shutil.which("bundletool") or "bundletool"
-        self.aapt2 = shutil.which("aapt2") or "aapt2"
-        self.apktool = Apktool()
+        self.baksmali = os.environ.get("BAKSMALI_PATH", "/opt/smali/baksmali.jar")
+        self.smali = os.environ.get("SMALI_PATH", "/opt/smali/smali.jar")
 
     def decode(
         self, aab_path: str, output_dir_path: str = None, force: bool = False
     ) -> str:
-        # Check if the aab file to decode is a valid file.
         if not os.path.isfile(aab_path):
             self.logger.error('Unable to find file "{0}"'.format(aab_path))
             raise FileNotFoundError('Unable to find file "{0}"'.format(aab_path))
 
-        # If no output directory is specified, use a new directory in the same
-        # directory as the aab file to decode.
         if not output_dir_path:
             output_dir_path = os.path.join(
                 os.path.dirname(aab_path),
@@ -43,56 +34,62 @@ class BundleDecompiler(object):
                 'name as the input file: "{0}"'.format(output_dir_path)
             )
 
-        # If an output directory is provided, make sure that the path to that
-        # directory exists (the final directory will be created by aabtool).
-        elif not os.path.isdir(os.path.dirname(output_dir_path)):
-            self.logger.error(
-                'Unable to find output directory "{0}", aabtool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
+        if os.path.isdir(output_dir_path):
+            if force:
+                shutil.rmtree(output_dir_path)
+            else:
+                self.logger.error(
+                    'Output directory "{0}" already exists, use the "force" flag '
+                    "to overwrite".format(output_dir_path)
                 )
-            )
-            raise NotADirectoryError(
-                'Unable to find output directory "{0}", aabtool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
+                raise FileExistsError(
+                    'Output directory "{0}" already exists, use the "force" flag '
+                    "to overwrite".format(output_dir_path)
                 )
+
+        self.logger.info(f"Extracting AAB directly to {output_dir_path}...")
+        with zipfile.ZipFile(aab_path, "r") as zip_ref:
+            zip_ref.extractall(output_dir_path)
+
+        manifest_path = os.path.join(
+            output_dir_path, "base", "manifest", "AndroidManifest.xml"
+        )
+        if os.path.exists(manifest_path):
+            shutil.copy(
+                manifest_path, os.path.join(output_dir_path, "AndroidManifest.xml")
             )
 
-        # Inform the user if an existing output directory is provided without the
-        # "force" flag.
-        if os.path.isdir(output_dir_path) and not force:
-            self.logger.error(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
-            )
-            raise FileExistsError(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
-            )
-        with tempfile.TemporaryDirectory() as temp_dir:
-            apks_path = os.path.join(temp_dir, "app.apks")
+        dex_dir = os.path.join(output_dir_path, "base", "dex")
+        if os.path.exists(dex_dir):
+            for dex_file in os.listdir(dex_dir):
+                if dex_file.endswith(".dex"):
+                    dex_path = os.path.join(dex_dir, dex_file)
 
-            build_apks_cmd = [
-                self.bundletool,
-                "build-apks",
-                f"--bundle={aab_path}",
-                f"--output={apks_path}",
-                "--mode=universal",
-            ]
-            self.logger.info(
-                f"Generating universal APK from AAB: {' '.join(build_apks_cmd)}"
-            )
-            subprocess.check_output(build_apks_cmd, stderr=subprocess.STDOUT)
+                    smali_folder = (
+                        "smali"
+                        if dex_file == "classes.dex"
+                        else f"smali_{dex_file.split('.')[0]}"
+                    )
+                    smali_dir = os.path.join(output_dir_path, smali_folder)
 
-            universal_apk_path = os.path.join(temp_dir, "universal.apk")
-            with zipfile.ZipFile(apks_path, "r") as zip_ref:
-                zip_ref.extract("universal.apk", temp_dir)
+                    cmd = [
+                        "java",
+                        "-jar",
+                        self.baksmali,
+                        "d",
+                        dex_path,
+                        "-o",
+                        smali_dir,
+                    ]
+                    self.logger.info(f"Disassembling {dex_file} -> {smali_folder}...")
+                    subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
-            self.logger.info("Decoding universal APK using Apktool wrapper...")
-            return self.apktool.decode(universal_apk_path, output_dir_path, force)
+                    os.remove(dex_path)
+
+        return output_dir_path
 
     def build(self, source_dir_path: str, output_aab_path: str = None) -> str:
+
         # Check if the input directory exists.
         if not os.path.isdir(source_dir_path):
             self.logger.error(
@@ -108,92 +105,68 @@ class BundleDecompiler(object):
             output_aab_path = os.path.join(
                 source_dir_path,
                 "output",
-                "{0}.aab".format(os.path.basename(source_dir_path)),
+                f"{os.path.basename(source_dir_path)}.aab",
             )
             self.logger.debug(
                 "No output aab path provided, the new aab will be saved in the "
                 'default path: "{0}"'.format(output_aab_path)
             )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_apk_path = os.path.join(temp_dir, "temp.apk")
-            proto_apk_path = os.path.join(temp_dir, "proto.apk")
-            base_dir = os.path.join(temp_dir, "base")
-            base_zip_path = os.path.join(temp_dir, "base.zip")
+        os.makedirs(os.path.dirname(output_aab_path), exist_ok=True)
 
-            self.logger.info("Building binary APK using Apktool wrapper...")
-            self.apktool.build(source_dir_path, temp_apk_path)
+        dex_dir = os.path.join(source_dir_path, "base", "dex")
+        os.makedirs(dex_dir, exist_ok=True)
 
-            aapt2_cmd = [
-                self.aapt2,
-                "convert",
-                "--output-format",
-                "proto",
-                "-o",
-                proto_apk_path,
-                temp_apk_path,
-            ]
-            self.logger.info("Converting to Protobuf format via AAPT2...")
-            subprocess.check_output(aapt2_cmd, stderr=subprocess.STDOUT)
-
-            os.makedirs(base_dir)
-            with zipfile.ZipFile(proto_apk_path, "r") as zip_ref:
-                zip_ref.extractall(base_dir)
-
-            meta_inf_dir = os.path.join(base_dir, "META-INF")
-            if os.path.exists(meta_inf_dir):
-                shutil.rmtree(meta_inf_dir)
-
-            manifest_dir = os.path.join(base_dir, "manifest")
-            os.makedirs(manifest_dir, exist_ok=True)
-            if os.path.exists(os.path.join(base_dir, "AndroidManifest.xml")):
-                shutil.move(
-                    os.path.join(base_dir, "AndroidManifest.xml"),
-                    os.path.join(manifest_dir, "AndroidManifest.xml"),
+        # 1. Recompile all smali folders back to .dex
+        for folder in os.listdir(source_dir_path):
+            folder_path = os.path.join(source_dir_path, folder)
+            if folder.startswith("smali") and os.path.isdir(folder_path):
+                dex_name = (
+                    "classes.dex"
+                    if folder == "smali"
+                    else f"{folder.replace('smali_', '')}.dex"
                 )
+                dex_path = os.path.join(dex_dir, dex_name)
 
-            dex_dir = os.path.join(base_dir, "dex")
-            os.makedirs(dex_dir, exist_ok=True)
-            for file_name in os.listdir(base_dir):
-                if file_name.endswith(".dex"):
-                    shutil.move(
-                        os.path.join(base_dir, file_name),
-                        os.path.join(dex_dir, file_name),
-                    )
+                cmd = ["java", "-jar", self.smali, "a", folder_path, "-o", dex_path]
+                self.logger.info(f"Assembling {folder} -> {dex_name}...")
+                subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
-            root_dir = os.path.join(base_dir, "root")
-            os.makedirs(root_dir, exist_ok=True)
-            for file_name in os.listdir(base_dir):
-                file_path = os.path.join(base_dir, file_name)
-                if os.path.isfile(file_path) and file_name not in ["resources.pb"]:
-                    shutil.move(file_path, os.path.join(root_dir, file_name))
-                elif os.path.isdir(file_path) and file_name not in [
-                    "manifest",
-                    "dex",
-                    "res",
-                    "assets",
-                    "lib",
-                    "root",
-                ]:
-                    shutil.move(file_path, os.path.join(root_dir, file_name))
+                shutil.rmtree(folder_path)
 
-            with zipfile.ZipFile(base_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for root, _, files in os.walk(base_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, base_dir)
-                        zipf.write(file_path, arcname)
+        root_manifest = os.path.join(source_dir_path, "AndroidManifest.xml")
+        base_manifest = os.path.join(
+            source_dir_path, "base", "manifest", "AndroidManifest.xml"
+        )
+        if os.path.exists(root_manifest):
+            shutil.move(root_manifest, base_manifest)
 
-            bundletool_cmd = [
-                self.bundletool,
-                "build-bundle",
-                f"--modules={base_zip_path}",
-                f"--output={output_aab_path}",
-            ]
-            self.logger.info("Building final AAB via bundletool...")
-            output = subprocess.check_output(bundletool_cmd, stderr=subprocess.STDOUT)
+        meta_inf_dir = os.path.join(source_dir_path, "META-INF")
+        if os.path.exists(meta_inf_dir):
+            self.logger.info("Stripping old META-INF signatures...")
+            shutil.rmtree(meta_inf_dir)
 
-            return output.decode(errors="replace")
+        self.logger.info("Zipping final AAB...")
+        output_abs_path = os.path.abspath(output_aab_path)
+
+        with zipfile.ZipFile(output_aab_path, "w") as zipf:
+            for root, _, files in os.walk(source_dir_path):
+                for file in files:
+                    file_path = os.path.abspath(os.path.join(root, file))
+
+                    if file_path == output_abs_path:
+                        continue
+
+                    arcname = os.path.relpath(file_path, source_dir_path)
+
+                    if file.endswith(".pb") or file.endswith(".so"):
+                        zipf.write(file_path, arcname, compress_type=zipfile.ZIP_STORED)
+                    else:
+                        zipf.write(
+                            file_path, arcname, compress_type=zipfile.ZIP_DEFLATED
+                        )
+
+        return output_aab_path
 
 
 class AABSigner(object):
