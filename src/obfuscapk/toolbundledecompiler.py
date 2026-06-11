@@ -143,7 +143,12 @@ class BundleDecompiler(object):
         meta_inf_dir = os.path.join(source_dir_path, "META-INF")
         if os.path.exists(meta_inf_dir):
             self.logger.info("Stripping old META-INF signatures...")
-            shutil.rmtree(meta_inf_dir)
+            for file in os.listdir(meta_inf_dir):
+                if (
+                    file.endswith((".SF", ".RSA", ".DSA", ".EC"))
+                    or file == "MANIFEST.MF"
+                ):
+                    os.remove(os.path.join(meta_inf_dir, file))
 
         self.logger.info("Zipping final AAB...")
         output_abs_path = os.path.abspath(output_aab_path)
