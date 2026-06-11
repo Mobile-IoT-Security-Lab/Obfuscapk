@@ -1,4 +1,4 @@
-FROM 9.5.1-jdk26-corretto AS builder
+FROM gradle:9.5.1-jdk21-corretto AS builder
 
 ENV SMALI_VERSION="3.0.9"
 

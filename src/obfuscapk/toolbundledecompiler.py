@@ -117,7 +117,6 @@ class BundleDecompiler(object):
         dex_dir = os.path.join(source_dir_path, "base", "dex")
         os.makedirs(dex_dir, exist_ok=True)
 
-        # 1. Recompile all smali folders back to .dex
         for folder in os.listdir(source_dir_path):
             folder_path = os.path.join(source_dir_path, folder)
             if folder.startswith("smali") and os.path.isdir(folder_path):
