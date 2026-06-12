@@ -54,11 +54,14 @@ class BundleDecompiler(object):
         manifest_path = os.path.join(
             output_dir_path, "base", "manifest", "AndroidManifest.xml"
         )
+
+        # COPY the AndroidManifest.xml to the directory used by the plugsins
         if os.path.exists(manifest_path):
             shutil.copy(
                 manifest_path, os.path.join(output_dir_path, "AndroidManifest.xml")
             )
 
+        # Decompile the dex files one by one using baksmali
         dex_dir = os.path.join(output_dir_path, "base", "dex")
         if os.path.exists(dex_dir):
             for dex_file in os.listdir(dex_dir):
@@ -117,6 +120,7 @@ class BundleDecompiler(object):
         dex_dir = os.path.join(source_dir_path, "base", "dex")
         os.makedirs(dex_dir, exist_ok=True)
 
+        # Recompile the smali file one by one into dex using smali
         for folder in os.listdir(source_dir_path):
             folder_path = os.path.join(source_dir_path, folder)
             if folder.startswith("smali") and os.path.isdir(folder_path):
@@ -137,9 +141,12 @@ class BundleDecompiler(object):
         base_manifest = os.path.join(
             source_dir_path, "base", "manifest", "AndroidManifest.xml"
         )
+
+        # Copy back the updated manifest to the original location
         if os.path.exists(root_manifest):
             shutil.move(root_manifest, base_manifest)
 
+        # Remove only the signature files
         meta_inf_dir = os.path.join(source_dir_path, "META-INF")
         if os.path.exists(meta_inf_dir):
             self.logger.info("Stripping old META-INF signatures...")
@@ -153,6 +160,7 @@ class BundleDecompiler(object):
         self.logger.info("Zipping final AAB...")
         output_abs_path = os.path.abspath(output_aab_path)
 
+        # Zip back everything
         with zipfile.ZipFile(output_aab_path, "w") as zipf:
             for root, _, files in os.walk(source_dir_path):
                 for file in files:

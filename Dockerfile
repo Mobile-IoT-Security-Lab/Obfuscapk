@@ -1,3 +1,4 @@
+# Multi stage builder for smali and baksmali
 FROM gradle:9.5.1-jdk21-corretto AS builder
 
 ENV SMALI_VERSION="3.0.9"
@@ -8,7 +9,7 @@ RUN git clone -b ${SMALI_VERSION} --depth 1 https://github.com/google/smali.git 
 
 RUN ./gradlew build -x test --no-daemon
 
-
+# Actual Obfuscapk conatiner
 FROM python:3.14.5-slim-trixie
 
 ENV APKTOOL_VERSION="3.0.2"
@@ -32,6 +33,7 @@ RUN mkdir -p /opt/apktool && \
     ln -s /opt/apktool/apktool /usr/local/bin/apktool
 
 RUN mkdir -p /opt/smali
+# Copy the builded smali and baksmali from the builder container
 COPY --from=builder /home/gradle/src/baksmali/build/libs/baksmali-*-fat.jar ${BAKSMALI_PATH}
 COPY --from=builder /home/gradle/src/smali/build/libs/smali-*-fat.jar ${SMALI_PATH}
 RUN chmod +x ${BAKSMALI_PATH} ${SMALI_PATH}
