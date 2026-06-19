@@ -80,6 +80,8 @@ class BundleDecompiler(object):
                         "-jar",
                         self.baksmali,
                         "d",
+                        "--api",
+                        "30",
                         dex_path,
                         "-o",
                         smali_dir,
@@ -131,7 +133,7 @@ class BundleDecompiler(object):
                 )
                 dex_path = os.path.join(dex_dir, dex_name)
 
-                cmd = ["java", "-jar", self.smali, "a", folder_path, "-o", dex_path]
+                cmd = ["java", "-jar", self.smali, "a", "--api", "30", folder_path, "-o", dex_path]
                 self.logger.info(f"Assembling {folder} -> {dex_name}...")
                 subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 

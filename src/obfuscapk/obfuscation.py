@@ -690,7 +690,8 @@ class Obfuscation(object):
         if not self._is_decoded:
             self.decode_apk()
 
-        self.repartition_smali(target_limit=35000)
+        if self.obfuscators_adding_methods > 0 or self.obfuscators_adding_fields > 0:
+            self.repartition_smali(target_limit=10000)
 
         # The obfuscated apk will be built with apktool or BundleDecompiler.
         apktool: Apktool = Apktool()
