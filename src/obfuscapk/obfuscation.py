@@ -588,11 +588,12 @@ class Obfuscation(object):
 
     def repartition_smali(self, target_limit: int = 60000) -> None:
         """
-        Re-distributes Smali files into smali, smali_classes2, etc. to avoid DEX limits.
+        Re-distributes Smali files into smali, smali_classes2, etc. to avoid DEX limits
+        by counting unique strings, methods, and fields.
         """
         self.logger.info("Re-partitioning Smali files to ensure DEX limits...")
 
-        # 1. Discover all Smali files and their method counts.
+        # 1. Discover all Smali files
         all_files = []
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)
@@ -608,38 +609,57 @@ class Obfuscation(object):
         if not all_files:
             return
 
-        # 2. Group files by their relative path (preserving package structure).
-        # Also count methods in each file.
+        # 2. Group files by their relative path (preserving package structure) and extract symbols.
         file_data = []
         for f in util.show_list_progress(
             all_files,
             interactive=self.interactive,
             description="Analyzing DEX partitions",
         ):
-            # Find which smali root this belongs to.
             rel_path = None
             parts = os.path.relpath(f, self._decoded_apk_path).split(os.path.sep)
-            # parts is something like ['smali_classes3', 'com', 'example', 'File.smali']
             rel_path = os.path.join(*parts[1:])
 
-            method_count = 0
+            strings = set()
+            methods = set()
+            fields = set()
             try:
                 with open(f, "r", encoding="utf-8", errors="ignore") as reader:
-                    for line in reader:
-                        if util.method_pattern.search(line):
-                            method_count += 1
+                    content = reader.read()
+                    
+                    cls_match = util.fast_class_pattern.search(content)
+                    if cls_match:
+                        cls_name = cls_match.group(1)
+                        methods.update(cls_name + "->" + m for m in util.fast_method_pattern.findall(content))
+                        fields.update(cls_name + "->" + f for f in util.fast_field_pattern.findall(content))
+                    
+                    strings.update(util.fast_const_string_pattern.findall(content))
+                    methods.update(util.fast_invoke_pattern.findall(content))
+                    fields.update(util.fast_field_usage_pattern.findall(content))
             except Exception:
                 pass
-            file_data.append({"abs": f, "rel": rel_path, "methods": method_count})
+            file_data.append({
+                "abs": f, 
+                "rel": rel_path, 
+                "strings": strings, 
+                "methods": methods, 
+                "fields": fields
+            })
 
         # 3. Redistribute.
         current_dex_index = 1
-        current_dex_methods = 0
+        current_strings = set()
+        current_methods = set()
+        current_fields = set()
 
         for item in file_data:
-            if current_dex_methods + item["methods"] > target_limit:
+            if (len(current_strings) + len(item["strings"]) > target_limit and len(current_strings | item["strings"]) > target_limit) or \
+               (len(current_methods) + len(item["methods"]) > target_limit and len(current_methods | item["methods"]) > target_limit) or \
+               (len(current_fields) + len(item["fields"]) > target_limit and len(current_fields | item["fields"]) > target_limit):
                 current_dex_index += 1
-                current_dex_methods = 0
+                current_strings = set()
+                current_methods = set()
+                current_fields = set()
 
             target_folder = (
                 "smali"
@@ -654,14 +674,15 @@ class Obfuscation(object):
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 os.rename(item["abs"], target_path)
 
-            current_dex_methods += item["methods"]
+            current_strings.update(item["strings"])
+            current_methods.update(item["methods"])
+            current_fields.update(item["fields"])
 
         # 4. Clean up empty smali folders.
         for i in range(1, 200):
             folder_name = "smali" if i == 1 else "smali_classes{0}".format(i)
             folder_path = os.path.join(self._decoded_apk_path, folder_name)
             if os.path.isdir(folder_path):
-                # Remove if empty.
                 for root, dirs, files in os.walk(folder_path, topdown=False):
                     if not files and not dirs:
                         os.rmdir(root)
@@ -669,7 +690,6 @@ class Obfuscation(object):
                 if i > 50:
                     break
 
-        # Refresh the internal file lists after moving things around.
         self._all_smali_files = []
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)

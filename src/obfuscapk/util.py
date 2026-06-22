@@ -108,6 +108,26 @@ const_string_pattern = re.compile(
     re.UNICODE,
 )
 
+# Fast regex patterns for extracting raw Dalvik descriptors used in DEX limit counting.
+
+# Matches class names in .class declarations, e.g. Lcom/example/MyClass;
+fast_class_pattern = re.compile(r"\.class[^\n]*\s+(L[^;\s]+;)", re.UNICODE)
+
+# Matches string values in const-string or const-string/jumbo
+fast_const_string_pattern = re.compile(r'const-string(?:/jumbo)?\s+[vp0-9]+,\s*"(.*?)"', re.UNICODE)
+
+# Matches method references, e.g. Lcom/example/MyClass;->myMethod(I)V
+fast_invoke_pattern = re.compile(r"L[^;\s]+;->[^\(\s]+\([^\)\s]*\)[^\s]+", re.UNICODE)
+
+# Matches field references, e.g. Lcom/example/MyClass;->MY_FIELD:I
+fast_field_usage_pattern = re.compile(r"L[^;\s]+;->[^:\s]+:[^\s]+", re.UNICODE)
+
+# Matches method declarations (extracting the signature), e.g. myMethod(I)V
+fast_method_pattern = re.compile(r"\.method[^\n]*\s+([^\s\()]+\([^\)]*\)[^\s]+)", re.UNICODE)
+
+# Matches field declarations (extracting the name and type), e.g. MY_FIELD:I
+fast_field_pattern = re.compile(r"\.field[^\n]*\s+([^:\s]+:[^\s=]+)", re.UNICODE)
+
 
 ########################################################################################
 
