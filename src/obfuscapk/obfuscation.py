@@ -401,10 +401,7 @@ class Obfuscation(object):
                 self._smali_files.sort()
 
                 # Check if multidex.
-                if self.is_bundle:
-                    smali_root = os.path.join(self._decoded_apk_path, "base", "dex")
-                else:
-                    smali_root = self._decoded_apk_path
+                smali_root = self._decoded_apk_path
 
                 smali_directories = []
                 if os.path.isdir(smali_root):
@@ -431,32 +428,23 @@ class Obfuscation(object):
 
                 if self._is_multidex:
                     for smali_directory in smali_directories:
-                        if self.is_bundle:
-                            current_directory = os.path.join(
-                                self._decoded_apk_path,
-                                "base",
-                                "dex",
-                                smali_directory,
-                                "",
-                            )
-                        else:
-                            current_directory = os.path.join(
-                                self._decoded_apk_path, smali_directory, ""
-                            )
-                            self._all_multidex_smali_files.append(
-                                [
-                                    smali_file
-                                    for smali_file in self._all_smali_files
-                                    if smali_file.startswith(current_directory)
-                                ]
-                            )
-                            self._multidex_smali_files.append(
-                                [
-                                    smali_file
-                                    for smali_file in self._smali_files
-                                    if smali_file.startswith(current_directory)
-                                ]
-                            )
+                        current_directory = os.path.join(
+                            self._decoded_apk_path, smali_directory, ""
+                        )
+                        self._all_multidex_smali_files.append(
+                            [
+                                smali_file
+                                for smali_file in self._all_smali_files
+                                if smali_file.startswith(current_directory)
+                            ]
+                        )
+                        self._multidex_smali_files.append(
+                            [
+                                smali_file
+                                for smali_file in self._smali_files
+                                if smali_file.startswith(current_directory)
+                            ]
+                        )
 
                 # A list containing the paths to the native libraries included in the
                 # application.
@@ -598,9 +586,12 @@ class Obfuscation(object):
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)
             parts = rel_to_decoded.split(os.path.sep)
-            if parts[0] == "smali" or (
-                parts[0].startswith("smali_classes")
-                and parts[0][len("smali_classes") :].isdigit()
+            
+            smali_dir_name = parts[0]
+            
+            if smali_dir_name == "smali" or (
+                smali_dir_name.startswith("smali_classes")
+                and smali_dir_name[len("smali_classes") :].isdigit()
             ):
                 for f in files:
                     if f.endswith(".smali"):
@@ -694,9 +685,10 @@ class Obfuscation(object):
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)
             parts = rel_to_decoded.split(os.path.sep)
-            if parts[0] == "smali" or (
-                parts[0].startswith("smali_classes")
-                and parts[0][len("smali_classes") :].isdigit()
+            smali_dir_name = parts[0]
+            if smali_dir_name == "smali" or (
+                smali_dir_name.startswith("smali_classes")
+                and smali_dir_name[len("smali_classes") :].isdigit()
             ):
                 for f in files:
                     if f.endswith(".smali"):
