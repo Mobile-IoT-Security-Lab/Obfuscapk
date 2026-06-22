@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import glob
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -165,6 +167,29 @@ class BundleDecompiler(object):
 
         return output_dir_path
 
+    def _sanitize_private_resources(self, decoded_dir: str) -> None:
+        pattern = re.compile(r"(?<!\*)@android:")
+
+        xml_files = glob.glob(
+            os.path.join(decoded_dir, "**", "*.xml"), recursive=True
+        )
+
+        for xml_file in xml_files:
+            try:
+                with open(xml_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                new_content = pattern.sub("@*android:", content)
+
+                if new_content != content:
+                    with open(xml_file, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+            except (UnicodeDecodeError, IOError):
+                # Skip binary or unreadable files
+                continue
+
+       
+
     def build(self, source_dir_path: str, output_aab_path: str = None) -> str:
 
         # Check if the input directory exists.
@@ -243,11 +268,15 @@ class BundleDecompiler(object):
         temp_modified_binary = os.path.join(source_dir_path, "temp_modified_binary.apk")
         temp_modified_proto = os.path.join(source_dir_path, "temp_modified_proto.apk")
 
+        # Sanitize private resource references to avoid aapt2 errors
+        self._sanitize_private_resources(temp_decoded_dir)
+
         # Build the binary APK using apktool
         subprocess.check_call(
             [
                 self.apktool,
                 "b",
+                "--force",
                 "--frame-path",
                 tempfile.gettempdir(),
                 temp_decoded_dir,
