@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import zipfile
 
 
@@ -15,6 +16,8 @@ class BundleDecompiler(object):
 
         self.baksmali = os.environ.get("BAKSMALI_PATH", "/opt/smali/baksmali.jar")
         self.smali = os.environ.get("SMALI_PATH", "/opt/smali/smali.jar")
+        self.aapt2 = os.environ.get("AAPT2_PATH", "aapt2")
+        self.apktool = os.environ.get("APKTOOL_PATH", "apktool")
 
     def decode(
         self, aab_path: str, output_dir_path: str = None, force: bool = False
@@ -55,11 +58,80 @@ class BundleDecompiler(object):
             output_dir_path, "base", "manifest", "AndroidManifest.xml"
         )
 
-        # COPY the AndroidManifest.xml to the directory used by the plugsins
+        # DECODE the AndroidManifest.xml to plain XML for the plugins
         if os.path.exists(manifest_path):
-            shutil.copy(
-                manifest_path, os.path.join(output_dir_path, "AndroidManifest.xml")
+            self.logger.info("Converting protobuf AndroidManifest.xml to plain XML...")
+            temp_proto_apk = os.path.join(output_dir_path, "temp_proto.apk")
+            temp_binary_apk = os.path.join(output_dir_path, "temp_binary.apk")
+            temp_decoded_dir = os.path.join(output_dir_path, "decoded_manifest")
+
+            # Create base prorto APK
+            temp_proto_dir = os.path.join(output_dir_path, "temp_proto_dir")
+            os.makedirs(temp_proto_dir, exist_ok=True)
+
+            shutil.move(
+                manifest_path, os.path.join(temp_proto_dir, "AndroidManifest.xml")
             )
+
+            resources_pb_path = os.path.join(output_dir_path, "base", "resources.pb")
+            if os.path.exists(resources_pb_path):
+                shutil.copy(
+                    resources_pb_path, os.path.join(temp_proto_dir, "resources.pb")
+                )
+
+            res_dir = os.path.join(output_dir_path, "base", "res")
+            if os.path.exists(res_dir):
+                shutil.move(res_dir, os.path.join(temp_proto_dir, "res"))
+
+            temp_zip_path = shutil.make_archive(temp_proto_apk, "zip", temp_proto_dir)
+            shutil.move(temp_zip_path, temp_proto_apk)
+
+            shutil.rmtree(temp_proto_dir)
+
+            # Convert proto APK to binary APK using aapt2
+            subprocess.check_call(
+                [
+                    self.aapt2,
+                    "convert",
+                    "-o",
+                    temp_binary_apk,
+                    "--output-format",
+                    "binary",
+                    temp_proto_apk,
+                ],
+                stderr=subprocess.STDOUT,
+            )
+
+            # Decode binary APK using apktool to get plain XML manifest
+            subprocess.check_call(
+                [
+                    self.apktool,
+                    "d",
+                    "--frame-path",
+                    tempfile.gettempdir(),
+                    temp_binary_apk,
+                    "-o",
+                    temp_decoded_dir,
+                    "-s",
+                    "-f",
+                ],
+                stderr=subprocess.STDOUT,
+            )
+
+            # Move the plain XML manifest and res/ to the root
+            shutil.move(
+                os.path.join(temp_decoded_dir, "AndroidManifest.xml"),
+                os.path.join(output_dir_path, "AndroidManifest.xml"),
+            )
+            decoded_res = os.path.join(temp_decoded_dir, "res")
+            base_res = os.path.join(output_dir_path, "base", "res")
+            if os.path.exists(decoded_res):
+                if os.path.exists(base_res):
+                    shutil.rmtree(base_res)
+                shutil.move(decoded_res, base_res)
+
+            os.remove(temp_proto_apk)
+            os.remove(temp_binary_apk)
 
         # Decompile the dex files one by one using baksmali
         dex_dir = os.path.join(output_dir_path, "base", "dex")
@@ -133,20 +205,93 @@ class BundleDecompiler(object):
                 )
                 dex_path = os.path.join(dex_dir, dex_name)
 
-                cmd = ["java", "-jar", self.smali, "a", "--api", "30", folder_path, "-o", dex_path]
+                cmd = [
+                    "java",
+                    "-jar",
+                    self.smali,
+                    "a",
+                    "--api",
+                    "30",
+                    folder_path,
+                    "-o",
+                    dex_path,
+                ]
                 self.logger.info(f"Assembling {folder} -> {dex_name}...")
                 subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
                 shutil.rmtree(folder_path)
 
         root_manifest = os.path.join(source_dir_path, "AndroidManifest.xml")
-        base_manifest = os.path.join(
-            source_dir_path, "base", "manifest", "AndroidManifest.xml"
+        base_res = os.path.join(source_dir_path, "base", "res")
+        temp_decoded_dir = os.path.join(source_dir_path, "decoded_manifest")
+
+        # Copy back the updated manifest to the original location as protobuf
+
+        self.logger.info(
+            "Converting plain XML AndroidManifest.xml and res/ back to protobuf..."
+        )
+        # Move manifest and res
+        shutil.move(
+            root_manifest, os.path.join(temp_decoded_dir, "AndroidManifest.xml")
+        )
+        decoded_res = os.path.join(temp_decoded_dir, "res")
+        if os.path.exists(base_res):
+            if os.path.exists(decoded_res):
+                shutil.rmtree(decoded_res)
+            shutil.move(base_res, decoded_res)
+
+        temp_modified_binary = os.path.join(source_dir_path, "temp_modified_binary.apk")
+        temp_modified_proto = os.path.join(source_dir_path, "temp_modified_proto.apk")
+
+        # Build the binary APK using apktool
+        subprocess.check_call(
+            [
+                self.apktool,
+                "b",
+                "--frame-path",
+                tempfile.gettempdir(),
+                temp_decoded_dir,
+                "-o",
+                temp_modified_binary,
+            ],
+            stderr=subprocess.STDOUT,
         )
 
-        # Copy back the updated manifest to the original location
+        # 3. Convert it back to proto using aapt2
+        subprocess.check_call(
+            [
+                self.aapt2,
+                "convert",
+                "-o",
+                temp_modified_proto,
+                "--output-format",
+                "proto",
+                temp_modified_binary,
+            ],
+            stderr=subprocess.STDOUT,
+        )
+
+        # Extract the compiled protobuf AndroidManifest.xml, res/ and resources.pb
+        if os.path.exists(base_res):
+            shutil.rmtree(base_res)
+        with zipfile.ZipFile(temp_modified_proto, "r") as z:
+            z.extract(
+                "AndroidManifest.xml",
+                path=os.path.join(source_dir_path, "base", "manifest"),
+            )
+
+            if "resources.pb" in z.namelist():
+                z.extract("resources.pb", path=os.path.join(source_dir_path, "base"))
+
+            for file_info in z.infolist():
+                if file_info.filename.startswith("res/"):
+                    z.extract(file_info, os.path.join(source_dir_path, "base"))
+
+        os.remove(temp_modified_binary)
+        os.remove(temp_modified_proto)
+        shutil.rmtree(temp_decoded_dir)
         if os.path.exists(root_manifest):
-            shutil.move(root_manifest, base_manifest)
+            os.remove(root_manifest)
 
         # Remove only the signature files
         meta_inf_dir = os.path.join(source_dir_path, "META-INF")

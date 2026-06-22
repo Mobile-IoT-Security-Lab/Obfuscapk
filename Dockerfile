@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     zipalign \
     apksigner \
+    aapt \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/apktool && \
