@@ -186,17 +186,6 @@ class BundleDecompiler(object):
                 # Skip binary or unreadable files
                 continue
 
-    @staticmethod
-    def _get_dex_sort_key(filename):
-        if filename == "classes.dex":
-            return 0
-
-        match = re.search(r"(\d+)", filename)
-        if match:
-            return int(match.group(1))
-
-        return 0
-
     def build(self, source_dir_path: str, output_aab_path: str = None) -> str:
 
         # Check if the input directory exists.
@@ -252,21 +241,6 @@ class BundleDecompiler(object):
                 subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
                 shutil.rmtree(folder_path)
-
-        # Correcly order dex files
-        all_files = os.listdir(dex_dir)
-        dex_filenames = [f for f in all_files if f.endswith(".dex")]
-        sorted_dex_files = sorted(dex_filenames, key=self._get_dex_sort_key)
-        for idx, old_name in enumerate(sorted_dex_files):
-            if idx == 0:
-                new_name = "classes.dex"
-            else:
-                new_name = f"classes{idx + 1}.dex"
-            if old_name != new_name:
-                self.logger.info(f"Renumbering dex: {old_name} -> {new_name}")
-                old_path = os.path.join(dex_dir, old_name)
-                new_path = os.path.join(dex_dir, new_name)
-                os.rename(old_path, new_path)
 
         root_manifest = os.path.join(source_dir_path, "AndroidManifest.xml")
         base_res = os.path.join(source_dir_path, "base", "res")
