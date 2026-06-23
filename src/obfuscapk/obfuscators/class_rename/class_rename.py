@@ -34,6 +34,10 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         # Will be populated before running the class rename obfuscator.
         self.class_name_to_smali_file: dict = {}
 
+        # Track all encrypted class names to detect and resolve collisions.
+        self._used_encrypted_names: Set[str] = set()
+        self._reserved_class_names: Set[str] = set()
+
     def encrypt_identifier(self, identifier: str) -> str:
         return util.get_length_preserved_hash(identifier)
 
@@ -62,10 +66,27 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             "{0}.uid.shared".format(util.get_random_string(16)),
         )
 
+    def get_class_ignore_prefixes(self) -> tuple:
+        prefixes = []
+        for package_name in self.ignore_package_names:
+            if not package_name:
+                continue
+            if package_name.startswith("L"):
+                prefixes.append(package_name)
+            else:
+                prefixes.append("L{0}".format(package_name))
+
+        return tuple(prefixes)
+
+    def get_all_smali_files(self, obfuscation_info: Obfuscation) -> List[str]:
+        smali_files = obfuscation_info.get_smali_files()
+        return list(getattr(obfuscation_info, "_all_smali_files", smali_files))
+
     def rename_class_declarations(
         self, smali_files: List[str], interactive: bool = False
     ) -> dict:
         renamed_classes = {}
+        ignore_class_prefixes = self.get_class_ignore_prefixes()
 
         # Search for class declarations that can be renamed.
         for smali_file in util.show_list_progress(
@@ -86,18 +107,10 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                     if not class_name:
                         class_match = util.class_pattern.search(line)
                         if class_match:
-                            if " enum " in line:
-                                class_name = class_match.group("class_name")
-                                renamed_classes[class_name] = class_name
-                                out_file.write(line)
-                                continue
-
                             class_name = class_match.group("class_name")
 
                             ignore_class = class_name and class_name.startswith(
-                                tuple(
-                                    "L{0}".format(p) for p in self.ignore_package_names
-                                )
+                                ignore_class_prefixes
                             )
 
                             # Split class name to its components and encrypt them.
@@ -116,15 +129,46 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                         token + class_name[separator_index]
                                     )
                                 elif not r_class and not ignore_class:
+                                    if token.endswith("_Impl"):
+                                        encrypted_token = (
+                                            self.encrypt_identifier(token[:-5])
+                                            + "_Impl"
+                                        )
+                                    else:
+                                        encrypted_token = self.encrypt_identifier(token)
                                     encrypted_class_name += (
-                                        self.encrypt_identifier(token)
-                                        + class_name[separator_index]
+                                        encrypted_token + class_name[separator_index]
                                     )
                                 else:
                                     encrypted_class_name += (
                                         token + class_name[separator_index]
                                     )
                                 separator_index += 1
+
+                            # Resolve hash collisions
+                            if (
+                                encrypted_class_name in self._used_encrypted_names
+                                or encrypted_class_name in self._reserved_class_names
+                            ) and encrypted_class_name != class_name:
+                                base = encrypted_class_name[:-1] 
+                                collision_counter = 2
+                                candidate = f"{base}{collision_counter};"
+                                while (
+                                    candidate in self._used_encrypted_names
+                                    or candidate in self._reserved_class_names
+                                ):
+                                    collision_counter += 1
+                                    candidate = f"{base}{collision_counter};"
+                                self.logger.warning(
+                                    "Hash collision detected: %s -> %s "
+                                    "already used, resolved to %s",
+                                    class_name,
+                                    encrypted_class_name,
+                                    candidate,
+                                )
+                                encrypted_class_name = candidate
+
+                            self._used_encrypted_names.add(encrypted_class_name)
 
                             out_file.write(
                                 line.replace(class_name, encrypted_class_name)
@@ -243,6 +287,22 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         # Add package name.
         dot_rename_transformations[self.package_name] = self.encrypted_package_name
 
+        # Activity names may omit the package name
+        relative_rename_transformations = {}
+        for old_name, new_name in dot_rename_transformations.items():
+            if old_name.startswith(self.package_name):
+                relative_rename_transformations[
+                    old_name.replace(self.package_name, "", 1)
+                ] = new_name.replace(self.encrypted_package_name, "", 1)
+
+        xml_value_pattern = re.compile(
+            r"(?P<quote>[\"'])(?P<value>[^\"']+)(?P=quote)", re.UNICODE
+        )
+        xml_tag_pattern = re.compile(
+            r"(?P<prefix></?)(?P<tag>[A-Za-z_][A-Za-z0-9_.$]*)(?P<suffix>[\s>/])",
+            re.UNICODE,
+        )
+
         for xml_file in util.show_list_progress(
             xml_files,
             interactive=interactive,
@@ -251,26 +311,31 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             with open(xml_file, "r", encoding="utf-8") as current_file:
                 file_content = current_file.read()
 
-            # Replace strings from longest to shortest (to avoid replacing
-            # partial strings).
-            for old_name in sorted(dot_rename_transformations, reverse=True, key=len):
-                file_content = file_content.replace(
-                    old_name, dot_rename_transformations[old_name]
+            def replace_xml_value(match):
+                value = match.group("value")
+                if value in dot_rename_transformations:
+                    value = dot_rename_transformations[value]
+                elif value in relative_rename_transformations:
+                    value = relative_rename_transformations[value]
+
+                return "{quote}{value}{quote}".format(
+                    quote=match.group("quote"),
+                    value=value,
                 )
 
-                # Activity without package name (".ActivityName")
-                if (
-                    '"{0}"'.format(old_name.replace(self.package_name, ""))
-                    in file_content
-                ):
-                    file_content = file_content.replace(
-                        '"{0}"'.format(old_name.replace(self.package_name, "")),
-                        '"{0}"'.format(
-                            dot_rename_transformations[old_name].replace(
-                                self.encrypted_package_name, ""
-                            )
-                        ),
-                    )
+            def replace_xml_tag(match):
+                tag = match.group("tag")
+                if tag in dot_rename_transformations:
+                    tag = dot_rename_transformations[tag]
+
+                return "{prefix}{tag}{suffix}".format(
+                    prefix=match.group("prefix"),
+                    tag=tag,
+                    suffix=match.group("suffix"),
+                )
+
+            file_content = xml_value_pattern.sub(replace_xml_value, file_content)
+            file_content = xml_tag_pattern.sub(replace_xml_tag, file_content)
 
             with open(xml_file, "w", encoding="utf-8") as current_file:
                 current_file.write(file_content)
@@ -279,6 +344,9 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
         try:
+            smali_files = obfuscation_info.get_smali_files()
+            all_smali_files = self.get_all_smali_files(obfuscation_info)
+
             Xml.register_namespace(
                 "android", "http://schemas.android.com/apk/res/android"
             )
@@ -297,7 +365,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             # Get a mapping between class name and smali file path.
             for smali_file in util.show_list_progress(
-                obfuscation_info.get_smali_files(),
+                all_smali_files,
                 interactive=obfuscation_info.interactive,
                 description="Class name to smali file mapping",
             ):
@@ -312,6 +380,8 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                     class_match.group("class_name")
                                 ] = smali_file
                                 break
+
+            self._reserved_class_names = set(self.class_name_to_smali_file)
 
             self.transform_package_name(manifest_root)
 
@@ -350,7 +420,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             # Rename all classes declared in smali files.
             class_rename_transformations = self.rename_class_declarations(
-                obfuscation_info.get_smali_files(), obfuscation_info.interactive
+                smali_files, obfuscation_info.interactive
             )
 
             out_dir = os.path.dirname(os.path.abspath(obfuscation_info.apk_path))
@@ -360,7 +430,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             # Update renamed classes through all the smali files.
             self.rename_class_usages_in_smali(
-                obfuscation_info.get_smali_files(),
+                all_smali_files,
                 class_rename_transformations,
                 obfuscation_info.interactive,
             )

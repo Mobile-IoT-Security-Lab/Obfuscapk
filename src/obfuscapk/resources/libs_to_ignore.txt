@@ -1,4 +1,5 @@
 afzkl/development/
+android/
 android/arch/
 android/content/
 android/opengl/
@@ -471,7 +472,10 @@ kotlin/
 kotlinx/
 timber/
 org/checkerframework/
+org/chickenhook/restrictionbypass/
+org/conscrypt/
 org/jetbrains/
+org/reactivestreams/
 io/reactivex/
 javax/annotation/
 javax/inject/
