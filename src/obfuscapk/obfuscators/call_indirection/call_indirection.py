@@ -27,6 +27,9 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
     def is_static(self, invoke_type: str) -> bool:
         return "static" in invoke_type
 
+    def is_super(self, invoke_type: str) -> bool:
+        return "super" in invoke_type
+
     def get_registers(self, invoke_pass: str) -> List[str]:
         return self.registers_pattern.findall(invoke_pass)
 
@@ -196,6 +199,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
                 if invoke_match:
                     if (
                         not self.is_init(invoke_match.group("invoke_method"))
+                        and not self.is_super(invoke_match.group("invoke_type"))
                         and (added_methods + new_methods_count) < max_methods_to_add
                     ):
                         # The following function will write into the file the new
@@ -222,14 +226,25 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         return new_methods_count
 
     def add_method(self, smali_file: str, new_method: StringIO):
+        new_method_code = new_method.getvalue()
+        if not new_method_code:
+            return
+
+        method_added = False
+
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
             for line in in_file:
                 if line.startswith("# direct methods"):
                     # Add the new indirection method(s) in the direct methods section.
                     out_file.write(line)
-                    out_file.write(new_method.getvalue())
+                    out_file.write(new_method_code)
+                    method_added = True
                 else:
                     out_file.write(line)
+
+            if not method_added:
+                out_file.write("\n")
+                out_file.write(new_method_code)
 
     def add_call_indirections(
         self, smali_files: List[str], max_methods_to_add: int, interactive: bool = False
