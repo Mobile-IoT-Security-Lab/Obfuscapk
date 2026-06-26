@@ -468,6 +468,7 @@ v2/com/playhaven/
 xamarin/
 zfee/sdk/
 dagger/
+j$/
 kotlin/
 kotlinx/
 timber/
