@@ -73,9 +73,6 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         self.native_classes.add(class_name)
                         break
 
-    def get_lib_package_names(self) -> List[str]:
-        return ["L{0}".format(lib) for lib in util.get_libs_to_ignore()]
-
     def get_ignored_smali_files(
         self, smali_files: List[str], all_smali_files: List[str]
     ) -> List[str]:
@@ -199,8 +196,6 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
         self.ignore_package_names = obfuscation_info.get_ignore_package_names()
-        if obfuscation_info.ignore_libs:
-            self.ignore_package_names += self.get_lib_package_names()
 
         try:
             smali_files = obfuscation_info.get_smali_files()
