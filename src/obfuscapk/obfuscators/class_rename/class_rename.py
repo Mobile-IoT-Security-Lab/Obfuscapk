@@ -78,10 +78,6 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         return tuple(prefixes)
 
-    def get_all_smali_files(self, obfuscation_info: Obfuscation) -> List[str]:
-        smali_files = obfuscation_info.get_smali_files()
-        return list(getattr(obfuscation_info, "_all_smali_files", smali_files))
-
     def rename_class_declarations(
         self, smali_files: List[str], interactive: bool = False
     ) -> dict:
@@ -345,7 +341,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         try:
             smali_files = obfuscation_info.get_smali_files()
-            all_smali_files = self.get_all_smali_files(obfuscation_info)
+            all_smali_files = obfuscation_info.get_all_smali_files()
 
             Xml.register_namespace(
                 "android", "http://schemas.android.com/apk/res/android"

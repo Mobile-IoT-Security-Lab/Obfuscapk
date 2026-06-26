@@ -801,6 +801,12 @@ class Obfuscation(object):
 
         return self._smali_files
 
+    def get_all_smali_files(self) -> List[str]:
+        if not self._is_decoded:
+            self.decode_apk()
+
+        return self._all_smali_files
+
     def get_multidex_smali_files(self) -> List[List[str]]:
         if not self._is_decoded:
             self.decode_apk()

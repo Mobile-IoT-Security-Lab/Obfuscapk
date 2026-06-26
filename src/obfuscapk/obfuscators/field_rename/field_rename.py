@@ -23,9 +23,41 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.added_fields = 0
         self.field_mapping = {}
         self.field_counter = 0
+        self.class_superclasses = {}
+        self.classes_to_skip = ("Landroid/", "Ljava/", "Lj$/")
 
     def rename_field(self, field_name: str) -> str:
         return util.get_length_preserved_hash(field_name)
+
+    def get_field_key(self, class_name: str, field_name: str, field_type: str) -> str:
+        return "{0}->{1}:{2}".format(class_name, field_name, field_type)
+
+    def get_field_mapping_key(
+        self, class_name: str, field_name: str, field_type: str
+    ) -> str:
+        while class_name:
+            field_key = self.get_field_key(class_name, field_name, field_type)
+            if field_key in self.field_mapping:
+                return field_key
+            class_name = self.class_superclasses.get(class_name)
+        return ""
+
+    def collect_superclasses(self, smali_files: List[str]):
+        for smali_file in smali_files:
+            with open(smali_file, "r", encoding="utf-8") as current_file:
+                class_name = None
+                for line in current_file:
+                    if not class_name:
+                        class_match = util.class_pattern.search(line)
+                        if class_match:
+                            class_name = class_match.group("class_name")
+                    elif class_name:
+                        super_match = util.super_class_pattern.search(line)
+                        if super_match:
+                            self.class_superclasses[class_name] = super_match.group(
+                                "class_name"
+                            )
+                            break
 
     def get_sdk_class_names(self, smali_files: List[str]) -> Set[str]:
         class_names: Set[str] = set()
@@ -52,20 +84,29 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
             description="Renaming field declarations",
         ):
             with util.inplace_edit_file(smali_file) as (in_file, out_file):
+                skip_remaining_lines = False
                 class_name = None
 
                 for line in in_file:
+                    if skip_remaining_lines:
+                        out_file.write(line)
+                        continue
+
                     ignore = False
 
                     if not class_name:
                         class_match = util.class_pattern.search(line)
-                        if class_match:
+                        if " enum " in line:
+                            skip_remaining_lines = True
+                            out_file.write(line)
+                            continue
+                        elif class_match:
                             class_name = class_match.group("class_name")
 
                     field_match = util.field_pattern.search(line)
 
                     if class_name and class_name.startswith(
-                        tuple("L{0}".format(p) for p in self.ignore_package_names)
+                        self.classes_to_skip + tuple(self.ignore_package_names)
                     ):
                         ignore = True
 
@@ -74,8 +115,10 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         field_type = field_match.group("field_type")
                         
                         if not ignore and "$" not in old_name:
-                            mapping_key = "{0}:{1}".format(old_name, field_type)
-                            
+                            mapping_key = self.get_field_key(
+                                class_name, old_name, field_type
+                            )
+
                             if mapping_key not in self.field_mapping:
                                 self.field_mapping[mapping_key] = "f{0}".format(self.field_counter)
                                 self.field_counter += 1
@@ -88,7 +131,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             )
                             out_file.write(line)
 
-                            renamed_fields.add("{0}->{1}:{2}".format(class_name, old_name, field_type))
+                            renamed_fields.add(mapping_key)
                         else:
                             out_file.write(line)
                     else:
@@ -112,12 +155,18 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                 for line in in_file:
                     field_usage_match = util.field_usage_pattern.search(line)
                     if field_usage_match:
+                        field_object = field_usage_match.group("field_object")
                         old_name = field_usage_match.group("field_name")
                         field_type = field_usage_match.group("field_type")
-                        
-                        mapping_key = "{0}:{1}".format(old_name, field_type)
-                        
-                        if mapping_key in self.field_mapping:
+
+                        mapping_key = self.get_field_mapping_key(
+                            field_object, old_name, field_type
+                        )
+
+                        if (
+                            mapping_key in fields_to_rename
+                            and mapping_key in self.field_mapping
+                        ):
                             new_name = self.field_mapping[mapping_key]
                             out_file.write(
                                 line.replace(
@@ -136,16 +185,21 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.ignore_package_names = obfuscation_info.get_ignore_package_names()
 
         try:
+            all_smali_files = obfuscation_info.get_all_smali_files()
+            smali_files = obfuscation_info.get_smali_files()
+
+            self.collect_superclasses(all_smali_files)
+
             sdk_class_declarations = self.get_sdk_class_names(
-                obfuscation_info.get_smali_files()
+                smali_files
             )
             renamed_field_declarations = self.rename_field_declarations(
-                obfuscation_info.get_smali_files(), obfuscation_info.interactive
+                smali_files, obfuscation_info.interactive
             )
 
             self.rename_field_references(
                 renamed_field_declarations,
-                obfuscation_info.get_smali_files(),
+                all_smali_files,
                 sdk_class_declarations,
                 obfuscation_info.interactive,
             )
