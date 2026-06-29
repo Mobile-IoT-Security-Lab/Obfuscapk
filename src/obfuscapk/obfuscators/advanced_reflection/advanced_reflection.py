@@ -314,6 +314,11 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
         try:
             # There is a method limit for dex files.
             max_methods_to_add = obfuscation_info.get_remaining_methods_per_obfuscator()
+            max_methods_to_add = (
+                max_methods_to_add
+                if isinstance(max_methods_to_add, int)
+                else sum(max_methods_to_add)
+            )
 
             dangerous_api: Set[str] = set(util.get_dangerous_api())
 
