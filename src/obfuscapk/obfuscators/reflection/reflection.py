@@ -561,10 +561,14 @@ class Reflection(obfuscator_category.ICodeObfuscator):
 
                                     # Check if the method invocation result is used in
                                     # the following lines.
-                                    for move_result_index in range(
+                                    move_result_range = range(
                                         current_line_number + 1,
                                         min(current_line_number + 10, len(lines) - 1),
-                                    ):
+                                    )
+                                    if tmp_return_type == "V":
+                                        move_result_range = range(0)
+
+                                    for move_result_index in move_result_range:
                                         if "invoke-" in lines[move_result_index]:
                                             # New method invocation, the previous method
                                             # result is not used.
@@ -634,6 +638,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                                 )
 
                                             lines[move_result_index] = new_move_result
+                                            break
 
                                     # Add the original method to the list of methods
                                     # using reflection.
