@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import re
 from io import StringIO
 from typing import List, Set
 
@@ -19,8 +18,6 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
         self.is_adding_methods = True
 
-        self.registers_pattern = re.compile(r"[vp]\d{1,3}")
-
     def is_range(self, invoke_type: str) -> bool:
         return "range" in invoke_type
 
@@ -29,12 +26,6 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
     def is_super(self, invoke_type: str) -> bool:
         return "super" in invoke_type
-
-    def get_registers(self, invoke_pass: str) -> List[str]:
-        return self.registers_pattern.findall(invoke_pass)
-
-    def get_register_range_count(self, register_list: List[str]) -> int:
-        return int(register_list[1][1:]) - int(register_list[0][1:]) + 1
 
     def is_void(self, invoke_return: str) -> bool:
         return invoke_return == "V"
@@ -77,11 +68,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         is_range_invocation = self.is_range(invoke_type)
         is_static_invocation = self.is_static(invoke_type)
 
-        register_list = self.get_registers(invoke_pass)
-        if is_range_invocation:
-            register_count = self.get_register_range_count(register_list)
-        else:
-            register_count = len(register_list)
+        register_count = len(util.get_invoke_registers(invoke_pass))
 
         is_void_value = self.is_void(invoke_return)
         is_wide_value = self.is_wide(invoke_return)

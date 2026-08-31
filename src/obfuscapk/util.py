@@ -108,6 +108,16 @@ const_string_pattern = re.compile(
     re.UNICODE,
 )
 
+# Generic Smali instructions and registers used by lightweight code analysis.
+smali_register_pattern = re.compile(r"[vp]\d+")
+smali_move_pattern = re.compile(
+    r"\s+move(?:-object)?(?:/from16|/16)?\s+"
+    r"(?P<destination>[vp]\d+),\s*(?P<source>[vp]\d+)"
+)
+smali_instruction_pattern = re.compile(
+    r"\s*(?P<opcode>[a-z][\w/-]*)(?:\s+(?P<register>[vp]\d+))?"
+)
+
 # Fast regex patterns for extracting raw Dalvik descriptors used in DEX limit counting.
 
 # Matches class names in .class declarations, e.g. Lcom/example/MyClass;
@@ -130,6 +140,21 @@ fast_field_pattern = re.compile(r"\.field[^\n]*\s+([^:\s]+:[^\s=]+)", re.UNICODE
 
 
 ########################################################################################
+
+
+def get_invoke_registers(invoke_pass: str) -> List[str]:
+    """Return every register passed by a normal or range invoke instruction."""
+    registers = smali_register_pattern.findall(invoke_pass)
+    if ".." not in invoke_pass or len(registers) != 2:
+        return registers
+
+    first, last = registers
+    if first[0] != last[0]:
+        return []
+    return [
+        "{0}{1}".format(first[0], number)
+        for number in range(int(first[1:]), int(last[1:]) + 1)
+    ]
 
 
 # When iterating over list L, "for element in show_list_progress(L, interactive=True)"
