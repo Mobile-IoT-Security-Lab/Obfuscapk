@@ -24,6 +24,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.field_counter = 0
         self.class_superclasses = {}
         self.native_classes = set()
+        self.protected_field_names: Set[str] = set()
 
     def rename_field(self, field_name: str) -> str:
         return util.get_length_preserved_hash(field_name)
@@ -83,6 +84,15 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
             if smali_file not in selected_files
         ]
 
+    def collect_protected_field_names(self, smali_files: List[str]):
+        """Protect field names that also occur in const-string instructions."""
+        for smali_file in smali_files:
+            with open(smali_file, "r", encoding="utf-8") as current_file:
+                for line in current_file:
+                    string_match = util.const_string_pattern.search(line)
+                    if string_match:
+                        self.protected_field_names.add(string_match.group("string"))
+
     def rename_field_declarations(
         self, smali_files: List[str], interactive: bool = False
     ) -> Set[str]:
@@ -126,7 +136,11 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         old_name = field_match.group("field_name")
                         field_type = field_match.group("field_type")
 
-                        if not ignore and "$" not in old_name:
+                        if (
+                            not ignore
+                            and "$" not in old_name
+                            and old_name not in self.protected_field_names
+                        ):
                             mapping_key = self.get_field_key(
                                 class_name, old_name, field_type
                             )
@@ -199,12 +213,14 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
         try:
             smali_files = obfuscation_info.get_smali_files()
+            all_smali_files = obfuscation_info.get_all_smali_files()
             ignored_smali_files = []
             if obfuscation_info.ignore_libs:
                 ignored_smali_files = self.get_ignored_smali_files(
-                    smali_files, obfuscation_info.get_all_smali_files()
+                    smali_files, all_smali_files
                 )
 
+            self.collect_protected_field_names(all_smali_files)
             self.collect_superclasses(smali_files)
             self.collect_native_classes(smali_files)
 
