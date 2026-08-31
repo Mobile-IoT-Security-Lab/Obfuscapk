@@ -65,7 +65,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     method_match = util.method_pattern.search(line)
                     if (
                         method_match
-                        and " private" in line
+                        and " private " in line
                         and "<init>" not in line
                         and "<clinit>" not in line
                         and " native " not in line

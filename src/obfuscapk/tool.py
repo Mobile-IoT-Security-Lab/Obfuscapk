@@ -336,13 +336,24 @@ class ApkSigner(object):
         # archive, an OS independent solution is to create a new archive without
         # including the signature files.
 
+        def is_signature_file(filename: str) -> bool:
+            filename = filename.upper()
+            if not filename.startswith("META-INF/"):
+                return False
+
+            filename = filename[len("META-INF/") :]
+            return "/" not in filename and (
+                filename == "MANIFEST.MF"
+                or filename.endswith((".SF", ".RSA", ".DSA", ".EC"))
+            )
+
         try:
             unsigned_apk_buffer = io.BytesIO()
 
             with zipfile.ZipFile(apk_path, "r") as current_apk:
                 # Check if the current apk is already signed.
                 if any(
-                    entry.filename.startswith("META-INF/")
+                    is_signature_file(entry.filename)
                     for entry in current_apk.infolist()
                 ):
                     self.logger.info(
@@ -354,7 +365,7 @@ class ApkSigner(object):
                         unsigned_apk_buffer, "w"
                     ) as unsigned_apk_zip_buffer:
                         for entry in current_apk.infolist():
-                            if not entry.filename.startswith("META-INF/"):
+                            if not is_signature_file(entry.filename):
                                 unsigned_apk_zip_buffer.writestr(
                                     entry, current_apk.read(entry.filename)
                                 )
