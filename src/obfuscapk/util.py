@@ -56,6 +56,9 @@ class_pattern = re.compile(r"\s*\.class.+?(?P<class_name>\S+?;)", re.UNICODE)
 # .super <class_name;>  # Every class name ends with ;
 super_class_pattern = re.compile(r"\s*\.super\s(?P<class_name>\S+?;)", re.UNICODE)
 
+# .implements <class_name;>  # Every class name ends with ;
+implements_pattern = re.compile(r"\s*\.implements\s(?P<class_name>\S+?;)", re.UNICODE)
+
 # .locals <number> or .registers <number>
 locals_pattern = re.compile(r"\s+\.(?:locals|registers)\s(?P<local_count>\d+)")
 
@@ -105,6 +108,12 @@ invoke_pattern = re.compile(
 # <spaces> const-string <register>, "<string>"  # This also matches const-string/jumbo
 const_string_pattern = re.compile(
     r"\s+const-string(/jumbo)?\s(?P<register>[vp0-9]+),\s" r'"(?P<string>.+)"',
+    re.UNICODE,
+)
+
+# <spaces> const-class <register>, <class_name>
+const_class_pattern = re.compile(
+    r"\s+const-class\s(?P<register>[vp]\d+),\s*(?P<class_name>\S+)",
     re.UNICODE,
 )
 

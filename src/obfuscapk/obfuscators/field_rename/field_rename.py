@@ -25,8 +25,10 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.field_mapping = {}
         self.field_counter = 0
         self.class_superclasses = {}
+        self.class_interfaces = {}
         self.native_classes = set()
         self.protected_field_names: Set[str] = set()
+        self.protected_field_classes: Set[str] = set()
         self.has_unknown_field_reflection = False
 
     def rename_field(self, field_name: str) -> str:
@@ -62,7 +64,12 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             self.class_superclasses[class_name] = super_match.group(
                                 "class_name"
                             )
-                            break
+
+                        interface_match = util.implements_pattern.search(line)
+                        if interface_match:
+                            self.class_interfaces.setdefault(class_name, set()).add(
+                                interface_match.group("class_name")
+                            )
 
     def collect_native_classes(self, smali_files: List[str]):
         for smali_file in smali_files:
@@ -111,56 +118,93 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
             index += 2
         return "".join(result)
 
-    def protect_and_clear(self, register_values):
+    def protect_and_clear(self, register_values, class_register_values):
         self.protected_field_names.update(register_values.values())
         register_values.clear()
+        class_register_values.clear()
+
+    def protect_field_class(self, class_name: str, include_inherited: bool):
+        pending_classes = [class_name]
+        while pending_classes:
+            current_class = pending_classes.pop()
+            if current_class in self.protected_field_classes:
+                continue
+
+            self.protected_field_classes.add(current_class)
+            if include_inherited:
+                superclass = self.class_superclasses.get(current_class)
+                if superclass:
+                    pending_classes.append(superclass)
+                pending_classes.extend(self.class_interfaces.get(current_class, ()))
 
     def collect_protected_field_names(self, smali_files: List[str]):
         """Find field names passed to reflection within simple basic blocks"""
         self.protected_field_names.clear()
+        self.protected_field_classes.clear()
         self.has_unknown_field_reflection = False
         for smali_file in smali_files:
             with open(smali_file, "r", encoding="utf-8") as current_file:
                 register_values = {}
+                class_register_values = {}
                 in_method = False
                 for line in current_file:
                     stripped_line = line.strip()
                     if stripped_line.startswith(".method "):
                         register_values.clear()
+                        class_register_values.clear()
                         in_method = True
                         continue
                     if stripped_line == ".end method":
                         register_values.clear()
+                        class_register_values.clear()
                         in_method = False
                         continue
+                    # Ignore lines outside of methods
                     if not in_method:
                         continue
 
-                    # A label can have predecessors we have not followed. Preserve
-                    # live names and start a fresh straight-line basic block.
+                    # A label starts a new basic block
                     if stripped_line.startswith(":"):
-                        self.protect_and_clear(register_values)
-                        continue
-
-                    string_match = util.const_string_pattern.search(line)
-                    if string_match:
-                        register_values[string_match.group("register")] = (
-                            self.unescape_smali_string(string_match.group("string"))
+                        self.protect_and_clear(
+                            register_values, class_register_values
                         )
                         continue
 
+                    # Record string constants
+                    string_match = util.const_string_pattern.search(line)
+                    if string_match:
+                        register = string_match.group("register")
+                        register_values[register] = (
+                            self.unescape_smali_string(string_match.group("string"))
+                        )
+                        class_register_values.pop(register, None)
+                        continue
+
+
+                    class_match = util.const_class_pattern.search(line)
+                    if class_match:
+                        register = class_match.group("register")
+                        class_register_values[register] = class_match.group(
+                            "class_name"
+                        )
+                        register_values.pop(register, None)
+                        continue
+
+                    # Track move instructions
                     move_match = util.smali_move_pattern.match(line)
                     if move_match:
                         destination = move_match.group("destination")
                         source = move_match.group("source")
-                        if source in register_values:
-                            register_values[destination] = register_values[source]
-                        else:
-                            register_values.pop(destination, None)
+                        for values in (register_values, class_register_values):
+                            if source in values:
+                                values[destination] = values[source]
+                            else:
+                                values.pop(destination, None)
                         continue
 
                     invoke_match = util.invoke_pattern.search(line)
                     if invoke_match:
+                        # Check if the invoke is a field reflection call
                         is_field_reflection = (
                             invoke_match.group("invoke_object")
                             == "Ljava/lang/Class;"
@@ -172,12 +216,20 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         registers = util.get_invoke_registers(
                             invoke_match.group("invoke_pass")
                         )
-                        if is_field_reflection and registers:
+                        # Get register values for field reflection call
+                        if is_field_reflection and len(registers) >= 2:
                             field_name = register_values.get(registers[-1])
                             if field_name is not None:
                                 self.protected_field_names.add(field_name)
                             else:
-                                self.has_unknown_field_reflection = True
+                                target_class = class_register_values.get(registers[0])
+                                if target_class:
+                                    self.protect_field_class(
+                                        target_class,
+                                        invoke_match.group("invoke_method") == "getField",
+                                    )
+                                else:
+                                    self.has_unknown_field_reflection = True
                         elif is_field_reflection:
                             self.has_unknown_field_reflection = True
                         continue
@@ -190,10 +242,13 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     if opcode.startswith(
                         ("if-", "goto", "packed-switch", "sparse-switch")
                     ):
-                        self.protect_and_clear(register_values)
+                        self.protect_and_clear(
+                            register_values, class_register_values
+                        )
                         continue
                     if opcode.startswith(("return", "throw")):
                         register_values.clear()
+                        class_register_values.clear()
                         continue
 
                     destination = instruction_match.group("register")
@@ -211,11 +266,13 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     )
                     if destination and not reads_first_register:
                         register_values.pop(destination, None)
+                        class_register_values.pop(destination, None)
                         if "wide" in opcode:
                             next_register = "{0}{1}".format(
                                 destination[0], int(destination[1:]) + 1
                             )
                             register_values.pop(next_register, None)
+                            class_register_values.pop(next_register, None)
 
     def rename_field_declarations(
         self, smali_files: List[str], interactive: bool = False
@@ -224,8 +281,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
         if self.has_unknown_field_reflection:
             self.logger.warning(
-                "Skipping field renaming because a reflective field name "
-                "could not be resolved"
+                "Skipping field renaming because neither the reflective field "
+                "name nor its target class could be resolved"
             )
             return renamed_fields
 
@@ -274,6 +331,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             not ignore
                             and "$" not in old_name  # Ignore compiler-generated fields
                             and old_name not in self.protected_field_names  # Ignore protected fields
+                            and class_name not in self.protected_field_classes
                         ):
                             mapping_key = self.get_field_key(
                                 class_name, old_name, field_type
@@ -356,8 +414,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     smali_files, all_smali_files
                 )
 
+            self.collect_superclasses(all_smali_files)
             self.collect_protected_field_names(all_smali_files)
-            self.collect_superclasses(smali_files)
             self.collect_native_classes(smali_files)
 
             renamed_field_declarations = self.rename_field_declarations(
