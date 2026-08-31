@@ -56,12 +56,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                             class_name = class_match.group("class_name")
                             if (
                                 class_name in class_names_to_ignore
-                                or class_name.startswith(
-                                    tuple(
-                                        "L{0}".format(p)
-                                        for p in self.ignore_package_names
-                                    )
-                                )
+                                or class_name.startswith(tuple(self.ignore_package_names))
                             ):
                                 skip_remaining_lines = True
                             out_file.write(line)
@@ -70,6 +65,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     method_match = util.method_pattern.search(line)
                     if (
                         method_match
+                        and " private" in line
                         and "<init>" not in line
                         and "<clinit>" not in line
                         and " native " not in line
@@ -81,18 +77,12 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         params = method_match.group("method_param")
                         returns = method_match.group("method_return")
 
-                        full_signature = "{0}({1}){2}".format(old_name, params, returns)
-                        partial_signature = "({0}){1}".format(params, returns)
-
-                        mapping_key = "{0}{1}".format(old_name, partial_signature)
-
-                        if mapping_key not in self.method_mapping:
-                            self.method_mapping[mapping_key] = "m{0}".format(
-                                self.method_counter
-                            )
+                        full_signature = f"{class_name}->{old_name}({params}){returns}"
+                        if full_signature not in self.method_mapping:
+                            self.method_mapping[full_signature] = f"m{self.method_counter}"
                             self.method_counter += 1
 
-                        new_name = self.method_mapping[mapping_key]
+                        new_name = self.method_mapping[full_signature]
 
                         out_file.write(
                             line.replace(
@@ -100,9 +90,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                                 "{0}(".format(new_name),
                             )
                         )
-                        renamed_methods.add(
-                            "{0}->{1}".format(class_name, full_signature)
-                        )
+                        renamed_methods.add(full_signature)
                     else:
                         out_file.write(line)
 
@@ -127,10 +115,12 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         params = invoke_match.group("invoke_param")
                         returns = invoke_match.group("invoke_return")
 
-                        mapping_key = "{0}({1}){2}".format(old_name, params, returns)
+                        owner = invoke_match.group("invoke_object")
+                        mapping_key = f"{owner}->{old_name}({params}){returns}"
 
-                        if mapping_key in self.method_mapping:
+                        if mapping_key in methods_to_rename:
                             new_name = self.method_mapping[mapping_key]
+
                             out_file.write(
                                 line.replace(
                                     "->{0}(".format(old_name),
