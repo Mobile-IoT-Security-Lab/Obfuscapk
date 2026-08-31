@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import List, Set
+from typing import List, Optional, Set, Tuple
 
 from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
@@ -28,6 +28,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         self.class_interfaces = {}
         self.native_classes = set()
         self.protected_field_names: Set[str] = set()
+        self.protected_fields: Set[Tuple[str, str]] = set()
         self.protected_field_classes: Set[str] = set()
         self.has_unknown_field_reflection = False
 
@@ -123,14 +124,26 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         register_values.clear()
         class_register_values.clear()
 
-    def protect_field_class(self, class_name: str, include_inherited: bool):
+    def protect_field(
+        self,
+        class_name: str,
+        field_name: Optional[str],
+        include_inherited: bool,
+    ):
         pending_classes = [class_name]
+        visited_classes = set()
         while pending_classes:
             current_class = pending_classes.pop()
-            if current_class in self.protected_field_classes:
+            if current_class in visited_classes:
                 continue
 
-            self.protected_field_classes.add(current_class)
+            visited_classes.add(current_class)
+            if field_name is None:
+                self.protected_field_classes.add(current_class)
+            else:
+                self.protected_fields.add((current_class, field_name))
+
+            # Include inherited classes/interfaces
             if include_inherited:
                 superclass = self.class_superclasses.get(current_class)
                 if superclass:
@@ -140,6 +153,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
     def collect_protected_field_names(self, smali_files: List[str]):
         """Find field names passed to reflection within simple basic blocks"""
         self.protected_field_names.clear()
+        self.protected_fields.clear()
         self.protected_field_classes.clear()
         self.has_unknown_field_reflection = False
         for smali_file in smali_files:
@@ -219,17 +233,23 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         # Get register values for field reflection call
                         if is_field_reflection and len(registers) >= 2:
                             field_name = register_values.get(registers[-1])
-                            if field_name is not None:
+                            target_class = class_register_values.get(registers[0])
+                            if field_name is not None and target_class:
+                                self.protect_field(
+                                    target_class,
+                                    field_name,
+                                    invoke_match.group("invoke_method") == "getField",
+                                )
+                            elif field_name is not None:
                                 self.protected_field_names.add(field_name)
+                            elif target_class:
+                                self.protect_field(
+                                    target_class,
+                                    None,
+                                    invoke_match.group("invoke_method") == "getField",
+                                )
                             else:
-                                target_class = class_register_values.get(registers[0])
-                                if target_class:
-                                    self.protect_field_class(
-                                        target_class,
-                                        invoke_match.group("invoke_method") == "getField",
-                                    )
-                                else:
-                                    self.has_unknown_field_reflection = True
+                                self.has_unknown_field_reflection = True
                         elif is_field_reflection:
                             self.has_unknown_field_reflection = True
                         continue
@@ -301,7 +321,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         continue
 
                     ignore = False
-                    
+
                     if not class_name:
                         class_match = util.class_pattern.search(line)
                         if " enum " in line:
@@ -331,6 +351,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             not ignore
                             and "$" not in old_name  # Ignore compiler-generated fields
                             and old_name not in self.protected_field_names  # Ignore protected fields
+                            and (class_name, old_name) not in self.protected_fields
                             and class_name not in self.protected_field_classes
                         ):
                             mapping_key = self.get_field_key(
