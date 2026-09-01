@@ -105,6 +105,13 @@ invoke_pattern = re.compile(
     re.UNICODE,
 )
 
+# <spaces> move-result[-object|-wide] <register>
+move_result_pattern = re.compile(
+    r"\s*move-result(?:-object|-wide)?\s+"
+    r"(?P<register>[vp]\d+)\s*(?:#.*)?$",
+    re.UNICODE,
+)
+
 # <spaces> const-string <register>, "<string>"  # This also matches const-string/jumbo
 const_string_pattern = re.compile(
     r"\s+const-string(/jumbo)?\s(?P<register>[vp0-9]+),\s" r'"(?P<string>.+)"',

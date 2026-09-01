@@ -2,8 +2,7 @@
 
 import logging
 import os
-import re
-from typing import List, Set
+from typing import List, Optional, Set, Tuple
 
 from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
@@ -203,6 +202,58 @@ class Reflection(obfuscator_category.ICodeObfuscator):
 
         return needed_registers
 
+    def find_method_end(self, lines: List[str], method_start: int) -> int:
+        for line_number in range(method_start + 1, len(lines)):
+            if lines[line_number].strip() == ".end method":
+                return line_number
+
+        raise ValueError("Method declaration without a matching .end method")
+
+    def get_locals_declaration(
+        self, lines: List[str], method_start: int, method_end: int
+    ) -> Optional[Tuple[int, int]]:
+        for line_number in range(method_start + 1, method_end):
+            stripped_line = lines[line_number].strip()
+            if stripped_line.startswith(".registers"):
+                return None
+
+            locals_match = util.locals_pattern.search(lines[line_number])
+            if locals_match:
+                return line_number, int(locals_match.group("local_count"))
+
+        return None
+
+    def find_immediate_move_result(
+        self, lines: List[str], invoke_index: int, method_end: int
+    ) -> Optional[Tuple[int, str]]:
+        debug_op_codes = [
+            ".line ",
+            ".local ",
+            ".end local ",
+            ".restart local ",
+            ".prologue",
+            ".epilogue",
+        ]
+
+        for line_number in range(invoke_index + 1, method_end):
+            stripped_line = lines[line_number].strip()
+            if not stripped_line or stripped_line.startswith("#"):
+                continue
+            if any(
+                stripped_line.startswith(op_code) for op_code in debug_op_codes
+            ):
+                continue
+
+            move_result_match = util.move_result_pattern.fullmatch(
+                lines[line_number].rstrip("\n")
+            )
+            if move_result_match:
+                return line_number, move_result_match.group("register")
+
+            return None
+
+        return None
+
     def add_smali_reflection_code(
         self, class_name: str, method_name: str, param_string: str
     ) -> str:
@@ -390,6 +441,35 @@ class Reflection(obfuscator_category.ICodeObfuscator):
 
         return smali_code
 
+    def create_reflection_result(
+        self, return_type: str, result_register: str, object_register: str
+    ) -> str:
+        smali_code = (
+            "\tmove-result-object {object_register}\n\n"
+            "\tcheck-cast {object_register}, {result_class}\n\n".format(
+                object_register=object_register,
+                result_class=self.type_dict.get(return_type, return_type),
+            )
+        )
+
+        if return_type in self.primitive_types:
+            smali_code += (
+                "\tinvoke-virtual {{{object_register}}}, {cast}\n\n".format(
+                    object_register=object_register,
+                    cast=self.reverse_cast_dict[return_type],
+                )
+            )
+            if return_type == "J" or return_type == "D":
+                smali_code += "\tmove-result-wide {0}\n".format(result_register)
+            else:
+                smali_code += "\tmove-result {0}\n".format(result_register)
+        else:
+            smali_code += "\tmove-object {0}, {1}\n".format(
+                result_register, object_register
+            )
+
+        return smali_code
+
     def obfuscate(self, obfuscation_info: Obfuscation):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
@@ -418,10 +498,6 @@ class Reflection(obfuscator_category.ICodeObfuscator):
             current_chunk_code = ""
             chunk_index = 0
 
-            move_result_pattern = re.compile(
-                r"\s+move-result.*?\s(?P<register>[vp0-9]+)"
-            )
-
             for smali_file in util.show_list_progress(
                 obfuscation_info.get_smali_files(),
                 interactive=obfuscation_info.interactive,
@@ -444,11 +520,19 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                     # The number of local registers of each method in method_index.
                     method_local_count: List[int] = []
 
+                    # Location of the .locals directive for each method.
+                    method_locals_index: List[Optional[int]] = []
+
+                    # Location of the matching .end method directive.
+                    method_end_index: List[int] = []
+
                     # Find the method declarations in this smali file.
                     for line_number, line in enumerate(lines):
                         method_match = util.method_pattern.search(line)
                         if method_match:
                             method_index.append(line_number)
+                            end_index = self.find_method_end(lines, line_number)
+                            method_end_index.append(end_index)
 
                             param_count = self.count_needed_registers(
                                 self.split_method_params(
@@ -456,22 +540,22 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                 )
                             )
 
-                            # Save the number of local registers of this method.
-                            local_count = 16
-                            local_match = util.locals_pattern.search(
-                                lines[line_number + 1]
+                            locals_declaration = self.get_locals_declaration(
+                                lines, line_number, end_index
                             )
-                            if local_match:
-                                local_count = int(local_match.group("local_count"))
+                            if locals_declaration:
+                                locals_index, local_count = locals_declaration
+                                method_locals_index.append(locals_index)
                                 method_local_count.append(local_count)
                             else:
-                                # For some reason the locals declaration was not found where
-                                # it should be, so assume the local registers are all used.
-                                method_local_count.append(local_count)
+                                # Missing declarations and .registers methods cannot be
+                                # expanded safely without remapping parameter aliases.
+                                method_locals_index.append(None)
+                                method_local_count.append(16)
 
                             # If there are enough registers available we can perform some
                             # reflection operations.
-                            if param_count + local_count <= 11:
+                            if locals_declaration and param_count + local_count <= 11:
                                 method_is_reflectable.append(True)
                             else:
                                 method_is_reflectable.append(False)
@@ -484,9 +568,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                         # method invocations inside each method's body.
                         if method_is_reflectable[method_number]:
                             current_line_number = index
-                            while not lines[current_line_number].startswith(
-                                ".end method"
-                            ):
+                            while current_line_number < method_end_index[method_number]:
                                 current_line_number += 1
 
                                 invoke_match = util.invoke_pattern.search(
@@ -559,86 +641,31 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                         "invoke_return"
                                     )
 
-                                    # Check if the method invocation result is used in
-                                    # the following lines.
-                                    move_result_range = range(
-                                        current_line_number + 1,
-                                        min(current_line_number + 10, len(lines) - 1),
-                                    )
-                                    if tmp_return_type == "V":
-                                        move_result_range = range(0)
-
-                                    for move_result_index in move_result_range:
-                                        if "invoke-" in lines[move_result_index]:
-                                            # New method invocation, the previous method
-                                            # result is not used.
-                                            break
-
-                                        move_result_match = move_result_pattern.search(
-                                            lines[move_result_index]
+                                   
+                                    move_result = None
+                                    if tmp_return_type != "V":
+                                        move_result = self.find_immediate_move_result(
+                                            lines,
+                                            current_line_number,
+                                            method_end_index[method_number],
                                         )
-                                        if move_result_match:
-                                            tmp_result_register = (
-                                                move_result_match.group("register")
-                                            )
 
-                                            # Fix the move-result instruction after the
-                                            # method invocation.
-                                            new_move_result = ""
-                                            if tmp_return_type in self.primitive_types:
-                                                new_move_result += (
-                                                    "\tmove-result-object "
-                                                    "{result_register}\n\n"
-                                                    "\tcheck-cast {result_register}, "
-                                                    "{result_class}\n\n".format(
-                                                        result_register=tmp_result_register,
-                                                        result_class=self.type_dict[
-                                                            tmp_return_type
-                                                        ],
-                                                    )
-                                                )
+                                    if move_result:
+                                        move_result_index, tmp_result_register = (
+                                            move_result
+                                        )
+                                        tmp_object_register = "v{0}".format(
+                                            method_local_count[method_number]
+                                        )
 
-                                                new_move_result += (
-                                                    "\tinvoke-virtual "
-                                                    "{{{result_register}}}, {cast}\n\n".format(
-                                                        result_register=tmp_result_register,
-                                                        cast=self.reverse_cast_dict[
-                                                            tmp_return_type
-                                                        ],
-                                                    )
-                                                )
-
-                                                if (
-                                                    tmp_return_type == "J"
-                                                    or tmp_return_type == "D"
-                                                ):
-                                                    new_move_result += (
-                                                        "\tmove-result-wide "
-                                                        "{result_register}\n".format(
-                                                            result_register=tmp_result_register
-                                                        )
-                                                    )
-                                                else:
-                                                    new_move_result += (
-                                                        "\tmove-result "
-                                                        "{result_register}\n".format(
-                                                            result_register=tmp_result_register
-                                                        )
-                                                    )
-
-                                            else:
-                                                new_move_result += (
-                                                    "\tmove-result-object "
-                                                    "{result_register}\n\n"
-                                                    "\tcheck-cast {result_register}, "
-                                                    "{return_type}\n".format(
-                                                        result_register=tmp_result_register,
-                                                        return_type=tmp_return_type,
-                                                    )
-                                                )
-
-                                            lines[move_result_index] = new_move_result
-                                            break
+                                       
+                                        lines[
+                                            move_result_index
+                                        ] = self.create_reflection_result(
+                                            tmp_return_type,
+                                            tmp_result_register,
+                                            tmp_object_register,
+                                        )
 
                                     # Add the original method to the list of methods
                                     # using reflection.
@@ -683,7 +710,12 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                                     self.methods_with_reflection += 1
 
                                     # Add the registers needed for performing reflection.
-                                    lines[index + 1] = "\t.locals {0}\n".format(
+                                    locals_index = method_locals_index[method_number]
+                                    if locals_index is None:
+                                        raise RuntimeError(
+                                            "Reflectable method has no .locals declaration"
+                                        )
+                                    lines[locals_index] = "\t.locals {0}\n".format(
                                         method_local_count[method_number] + 4
                                     )
 
