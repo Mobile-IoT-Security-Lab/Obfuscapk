@@ -98,26 +98,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         ]
 
     def unescape_smali_string(self, value: str) -> str:
-        escapes = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r"}
-        result = []
-        index = 0
-        while index < len(value):
-            if value[index] != "\\" or index + 1 == len(value):
-                result.append(value[index])
-                index += 1
-                continue
-
-            escaped = value[index + 1]
-            if escaped == "u" and index + 5 < len(value):
-                try:
-                    result.append(chr(int(value[index + 2 : index + 6], 16)))
-                    index += 6
-                    continue
-                except ValueError:
-                    pass
-            result.append(escapes.get(escaped, escaped))
-            index += 2
-        return "".join(result)
+        return util.unescape_smali_string(value)
 
     def protect_and_clear(self, register_values, class_register_values):
         self.protected_field_names.update(register_values.values())

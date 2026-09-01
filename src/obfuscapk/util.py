@@ -84,6 +84,15 @@ annotation_method_pattern = re.compile(
     re.UNICODE,
 )
 
+# Method references used outside invoke instructions, for example method handles.
+method_reference_pattern = re.compile(
+    r"(?P<method_object>L[^;\s]+;)"
+    r"->(?P<method_name>[^\s(]+)"
+    r"\((?P<method_param>[^)\s]*)\)"
+    r"(?P<method_return>\[*[VZBSCIJFD]|\[*L[^;\s]+;)",
+    re.UNICODE,
+)
+
 # <spaces> <usage_type> <param>, <field_object>-><field_name>:<field_type>
 field_usage_pattern = re.compile(
     r"\s+(?P<usage_type>[is](get|put)\S*)\s"
@@ -171,6 +180,29 @@ def get_invoke_registers(invoke_pass: str) -> List[str]:
         "{0}{1}".format(first[0], number)
         for number in range(int(first[1:]), int(last[1:]) + 1)
     ]
+
+
+def unescape_smali_string(value: str) -> str:
+    escapes = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r"}
+    result = []
+    index = 0
+    while index < len(value):
+        if value[index] != "\\" or index + 1 == len(value):
+            result.append(value[index])
+            index += 1
+            continue
+
+        escaped = value[index + 1]
+        if escaped == "u" and index + 5 < len(value):
+            try:
+                result.append(chr(int(value[index + 2 : index + 6], 16)))
+                index += 6
+                continue
+            except ValueError:
+                pass
+        result.append(escapes.get(escaped, escaped))
+        index += 2
+    return "".join(result)
 
 
 # When iterating over list L, "for element in show_list_progress(L, interactive=True)"
