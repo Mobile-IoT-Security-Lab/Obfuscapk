@@ -402,6 +402,7 @@ org/appcelerator/
 org/aspectj/
 org/bouncycastle/
 org/ccil/cowan/tagsoup/
+org/chromium/support_lib_boundary/
 org/cocos2d/
 org/cocos2dx/
 org/codehaus/jackson/
@@ -481,3 +482,6 @@ io/reactivex/
 javax/annotation/
 javax/inject/
 javax/annotation/processing/
+io/flutter/
+com/github/dart_lang/jni/
+net/zetetic/database/

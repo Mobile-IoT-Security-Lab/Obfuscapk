@@ -78,6 +78,137 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         return tuple(prefixes)
 
+    def get_class_names_to_ignore(self, obfuscation_info: Obfuscation, manifest_root: Element) -> Set[str]:
+
+        ignored_class_names = set()
+
+        # Ignore JNI and native classes
+        for class_name, smali_file in self.class_name_to_smali_file.items():
+            if "JNI;" in class_name or "/Native" in class_name:
+                ignored_class_names.add(class_name)
+            with open(smali_file, "r", encoding="utf-8") as current_file:
+                if any(" native " in line for line in current_file):
+                    ignored_class_names.add(class_name)
+
+        # Ignore classes referenced in the manifest
+        package_name = manifest_root.get("package", "")
+        for element in manifest_root.iter():
+            for value in element.attrib.values():
+                candidates = [value]
+                if value.startswith("."):
+                    candidates.append(package_name + value)
+                elif "." not in value:
+                    candidates.append("{}.{}".format(package_name, value))
+                for candidate in candidates:
+                    smali_class_name = "L{};".format(
+                        candidate.replace(".", "/")
+                    )
+                    if smali_class_name in self.class_name_to_smali_file:
+                        ignored_class_names.add(smali_class_name)
+
+        # Ignore native library references
+        native_names = set()
+        native_name_pattern = re.compile(
+            rb"[A-Za-z_$][A-Za-z0-9_$]*(?:[/.][A-Za-z_$][A-Za-z0-9_$]*)+"
+        )
+        for native_lib_file in obfuscation_info.get_native_lib_files():
+            with open(native_lib_file, "rb") as native_lib:
+                native_names.update(
+                    name.replace(b".", b"/")
+                    for name in native_name_pattern.findall(native_lib.read())
+                )
+
+        ignored_class_names.update(
+            class_name
+            for class_name in self.class_name_to_smali_file
+            if class_name[1:-1].encode() in native_names
+            or class_name[:-1].encode() in native_names
+        )
+        return self._include_package_sensitive_dependencies(ignored_class_names)
+
+    def _include_package_sensitive_dependencies(self, roots: Set[str]) -> Set[str]:
+        restricted_classes = set()
+        restricted_methods = set()
+        restricted_fields = set()
+
+        def is_package_sensitive(line: str) -> bool:
+            flags = line.split()
+            return "public" not in flags and "private" not in flags
+
+        for class_name, smali_file in self.class_name_to_smali_file.items():
+            with open(smali_file, "r", encoding="utf-8") as current_file:
+                for line in current_file:
+                    if util.class_pattern.search(line) and (line):
+                        restricted_classes.add(class_name)
+
+                    method = util.method_pattern.search(line)
+                    if method and is_package_sensitive(line):
+                        restricted_methods.add(
+                            (
+                                class_name,
+                                method.group("method_name"),
+                                method.group("method_param"),
+                                method.group("method_return"),
+                            )
+                        )
+                    field = util.field_pattern.search(line)
+                    if field and is_package_sensitive(line):
+                        restricted_fields.add(
+                            (
+                                class_name,
+                                field.group("field_name"),
+                                field.group("field_type"),
+                            )
+                        )
+
+        dependencies = {
+            class_name: set() for class_name in self.class_name_to_smali_file
+        }
+
+        def connect(first: str, second: str) -> None:
+            if (
+                first != second
+                and second in self.class_name_to_smali_file
+                and first.rsplit("/", 1)[0] == second.rsplit("/", 1)[0]
+            ):
+                dependencies[first].add(second)
+                dependencies[second].add(first)
+
+        # Connect classes based on package-sensitive access
+        for class_name, smali_file in self.class_name_to_smali_file.items():
+            with open(smali_file, "r", encoding="utf-8") as current_file:
+                for line in current_file:
+                    for referenced_class in util.class_name_pattern.findall(line):
+                        if referenced_class in restricted_classes:
+                            connect(class_name, referenced_class)
+
+                    invocation = util.invoke_pattern.search(line)
+                    if invocation and (
+                        invocation.group("invoke_object"),
+                        invocation.group("invoke_method"),
+                        invocation.group("invoke_param"),
+                        invocation.group("invoke_return"),
+                    ) in restricted_methods:
+                        connect(class_name, invocation.group("invoke_object"))
+
+                    field_usage = util.field_usage_pattern.search(line)
+                    if field_usage and (
+                        field_usage.group("field_object"),
+                        field_usage.group("field_name"),
+                        field_usage.group("field_type"),
+                    ) in restricted_fields:
+                        connect(class_name, field_usage.group("field_object"))
+
+        # Search connected classes in the graph
+        result = set(roots)
+        pending = list(roots)
+        while pending:
+            for dependency in dependencies.get(pending.pop(), ()):
+                if dependency not in result:
+                    result.add(dependency)
+                    pending.append(dependency)
+        return result
+
     def rename_class_declarations(
         self, smali_files: List[str], interactive: bool = False
     ) -> dict:
@@ -146,7 +277,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                 encrypted_class_name in self._used_encrypted_names
                                 or encrypted_class_name in self._reserved_class_names
                             ) and encrypted_class_name != class_name:
-                                base = encrypted_class_name[:-1] 
+                                base = encrypted_class_name[:-1]
                                 collision_counter = 2
                                 candidate = f"{base}{collision_counter};"
                                 while (
@@ -184,7 +315,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                     if annotation_flag and 'name = "' in line:
                         # Subclasses have to be renamed as well.
                         subclass_match = self.subclass_name_pattern.search(line)
-                        if subclass_match and not r_class:
+                        if subclass_match and not r_class and not ignore_class:
                             subclass_name = subclass_match.group("subclass_name")
                             out_file.write(
                                 line.replace(
@@ -275,6 +406,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         xml_files: List[str],
         rename_transformations: dict,
         interactive: bool = False,
+        manifest_file: Union[str, None] = None,
     ):
         dot_rename_transformations = self.slash_to_dot_notation_for_classes(
             rename_transformations
@@ -282,6 +414,19 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         # Add package name.
         dot_rename_transformations[self.package_name] = self.encrypted_package_name
+
+        if manifest_file:
+            manifest_root = Xml.parse(manifest_file).getroot()
+            android_name = "{http://schemas.android.com/apk/res/android}name"
+            package_prefix = "{0}.".format(self.package_name)
+            encrypted_package_prefix = "{0}.".format(self.encrypted_package_name)
+            for alias in manifest_root.iter("activity-alias"):
+                alias_name = alias.get(android_name)
+                if alias_name and alias_name.startswith(package_prefix):
+                    dot_rename_transformations[alias_name] = (
+                        encrypted_package_prefix
+                        + alias_name[len(package_prefix) :]
+                    )
 
         # Activity names may omit the package name
         relative_rename_transformations = {}
@@ -336,6 +481,168 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             with open(xml_file, "w", encoding="utf-8") as current_file:
                 current_file.write(file_content)
 
+    def get_resource_xml_files(self, resource_directory: str) -> List[str]:
+        xml_files = []
+        for root, _, file_names in os.walk(resource_directory):
+            for file_name in file_names:
+                if file_name.endswith(".xml"):
+                    xml_files.append(os.path.join(root, file_name))
+        return xml_files
+
+    def rename_class_usages_in_json_assets(
+        self, assets_directory: str, rename_transformations: Dict[str, str]
+    ) -> None:
+        class_names = dict(rename_transformations)
+        for old_name, new_name in rename_transformations.items():
+            class_names[old_name[1:-1]] = new_name[1:-1]
+            class_names[old_name[1:-1].replace("/", ".")] = new_name[1:-1].replace(
+                "/", "."
+            )
+
+        def rename_json_value(value):
+            if isinstance(value, str):
+                renamed_value = class_names.get(value, value)
+                return renamed_value, renamed_value != value
+            if isinstance(value, list):
+                renamed_items = [rename_json_value(item) for item in value]
+                return [item for item, _ in renamed_items], any(
+                    changed for _, changed in renamed_items
+                )
+            if isinstance(value, dict):
+                renamed_items = {
+                    key: rename_json_value(item) for key, item in value.items()
+                }
+                return {
+                    key: item for key, (item, _) in renamed_items.items()
+                }, any(changed for _, changed in renamed_items.values())
+            return value, False
+
+        json_files = []
+        for root, _, file_names in os.walk(assets_directory):
+            for file_name in file_names:
+                if file_name.lower().endswith(".json"):
+                    json_files.append(os.path.join(root, file_name))
+
+        for json_file in json_files:
+            try:
+                with open(json_file, "r", encoding="utf-8") as current_file:
+                    content = json.load(current_file)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+
+            content, changed = rename_json_value(content)
+            if changed:
+                with open(json_file, "w", encoding="utf-8") as current_file:
+                    json.dump(content, current_file, indent=2)
+                    current_file.write("\n")
+
+    def get_service_loader_files(self, decoded_apk_directory: str) -> List[str]:
+        service_files = []
+        for root, _, file_names in os.walk(decoded_apk_directory):
+            relative_root = os.path.relpath(root, decoded_apk_directory)
+            path_parts = os.path.normpath(relative_root).split(os.path.sep)
+            if len(path_parts) < 2 or path_parts[-2:] != ["META-INF", "services"]:
+                continue
+            path_prefix = path_parts[:-2]
+            if path_prefix and path_prefix[-1] not in {
+                "unknown",
+                "original",
+                "root",
+            }:
+                continue
+            service_files.extend(
+                os.path.join(root, file_name) for file_name in file_names
+            )
+        return service_files
+
+    def rename_class_usages_in_service_loader_files(
+        self,
+        decoded_apk_directory: str,
+        rename_transformations: Dict[str, str],
+    ) -> None:
+        binary_name_transformations = {
+            old_name[1:-1].replace("/", "."): new_name[1:-1].replace("/", ".")
+            for old_name, new_name in rename_transformations.items()
+        }
+        renamed_descriptors = {}
+        service_operations = []
+        destination_files = set()
+
+        for service_file in sorted(
+            self.get_service_loader_files(decoded_apk_directory)
+        ):
+            service_name = os.path.basename(service_file)
+            renamed_service_name = binary_name_transformations.get(
+                service_name, service_name
+            )
+            renamed_service_file = os.path.join(
+                os.path.dirname(service_file), renamed_service_name
+            )
+            if renamed_service_file != service_file and (
+                os.path.exists(renamed_service_file)
+                or renamed_service_file in destination_files
+            ):
+                raise FileExistsError(
+                    'Unable to rename service descriptor "{0}" to "{1}": '
+                    "destination already exists".format(
+                        service_file, renamed_service_file
+                    )
+                )
+            destination_files.add(renamed_service_file)
+            service_operations.append(
+                (service_file, service_name, renamed_service_file, renamed_service_name)
+            )
+
+        for (
+            service_file,
+            service_name,
+            renamed_service_file,
+            renamed_service_name,
+        ) in service_operations:
+            with open(service_file, "r", encoding="utf-8") as current_file:
+                lines = current_file.readlines()
+
+            changed = False
+            renamed_lines = []
+            for line in lines:
+                provider_part, comment_marker, comment = line.partition("#")
+                provider_name = provider_part.strip()
+                renamed_provider = binary_name_transformations.get(provider_name)
+                if renamed_provider and renamed_provider != provider_name:
+                    leading_size = len(provider_part) - len(provider_part.lstrip())
+                    trailing_start = len(provider_part.rstrip())
+                    provider_part = (
+                        provider_part[:leading_size]
+                        + renamed_provider
+                        + provider_part[trailing_start:]
+                    )
+                    changed = True
+                renamed_lines.append(provider_part + comment_marker + comment)
+
+            if changed:
+                with open(service_file, "w", encoding="utf-8") as current_file:
+                    current_file.writelines(renamed_lines)
+
+            if renamed_service_name == service_name:
+                continue
+
+            os.rename(service_file, renamed_service_file)
+            renamed_descriptors[service_name] = renamed_service_name
+
+        apktool_config = os.path.join(decoded_apk_directory, "apktool.yml")
+        if renamed_descriptors and os.path.isfile(apktool_config):
+            with open(apktool_config, "r", encoding="utf-8") as current_file:
+                config_content = current_file.read()
+
+            for old_name, new_name in renamed_descriptors.items():
+                config_content = config_content.replace(
+                    "META-INF/services/{0}".format(old_name),
+                    "META-INF/services/{0}".format(new_name),
+                )
+
+            with open(apktool_config, "w", encoding="utf-8") as current_file:
+                current_file.write(config_content)
+
     def obfuscate(self, obfuscation_info: Obfuscation):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
 
@@ -379,23 +686,22 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             self._reserved_class_names = set(self.class_name_to_smali_file)
 
+            # Get user defined and automatically detected keep-class names before
+            # changing the package name stored in the manifest.
+            self.ignore_package_names = obfuscation_info.get_ignore_package_names()
+            self.ignore_package_names.extend(
+                self.get_class_names_to_ignore(obfuscation_info, manifest_root)
+            )
+
             self.transform_package_name(manifest_root)
 
             # Write the changes into the manifest file.
             manifest_tree.write(obfuscation_info.get_manifest_file(), encoding="utf-8")
 
-            xml_files: Set[str] = set(
-                os.path.join(root, file_name)
-                for root, dir_names, file_names in os.walk(
-                    obfuscation_info.get_resource_directory()
-                )
-                for file_name in file_names
-                if file_name.endswith(".xml")
-                and (
-                    "layout" in root or "xml" in root
-                )  # Only res/layout-*/ and res/xml-*/ folders.
+            xml_files = self.get_resource_xml_files(
+                obfuscation_info.get_resource_directory()
             )
-            xml_files.add(obfuscation_info.get_manifest_file())
+            xml_files.append(obfuscation_info.get_manifest_file())
 
             # TODO: use the following code to rename only the classes declared in
             #  application's package.
@@ -411,9 +717,6 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             #     list(package_smali_files), obfuscation_info.interactive
             # )
 
-            # Get user defined ignore package list.
-            self.ignore_package_names = obfuscation_info.get_ignore_package_names()
-
             # Rename all classes declared in smali files.
             class_rename_transformations = self.rename_class_declarations(
                 smali_files, obfuscation_info.interactive
@@ -423,6 +726,16 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             apk_name = os.path.splitext(os.path.basename(obfuscation_info.apk_path))[0]
             out_file = os.path.join(out_dir, f"{apk_name}_class_mapping.json")
             self.export_mapping(class_rename_transformations, out_file)
+
+            self.rename_class_usages_in_json_assets(
+                obfuscation_info.get_assets_directory(),
+                class_rename_transformations,
+            )
+
+            self.rename_class_usages_in_service_loader_files(
+                os.path.dirname(obfuscation_info.get_manifest_file()),
+                class_rename_transformations,
+            )
 
             # Update renamed classes through all the smali files.
             self.rename_class_usages_in_smali(
@@ -436,6 +749,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 list(xml_files),
                 class_rename_transformations,
                 obfuscation_info.interactive,
+                manifest_file=obfuscation_info.get_manifest_file(),
             )
 
         except Exception as e:
