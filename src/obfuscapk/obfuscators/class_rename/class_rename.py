@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from codecs import ignore_errors
+from doctest import IGNORE_EXCEPTION_DETAIL
 import json
 import logging
 import os
@@ -7,6 +9,8 @@ import re
 import xml.etree.cElementTree as Xml
 from typing import Dict, List, Set, Union
 from xml.etree.cElementTree import Element
+
+from typing_extensions import ParamSpecKwargs
 
 from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
@@ -33,6 +37,10 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         # Will be populated before running the class rename obfuscator.
         self.class_name_to_smali_file: dict = {}
+
+        # Classes that may be renamed, but must remain in their original dex
+        # package to preserve package-sensitive access from a kept class.
+        self.package_preserved_class_names: Set[str] = set()
 
         # Track all encrypted class names to detect and resolve collisions.
         self._used_encrypted_names: Set[str] = set()
@@ -124,10 +132,15 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             if class_name[1:-1].encode() in native_names
             or class_name[:-1].encode() in native_names
         )
-        return self._include_package_sensitive_dependencies(ignored_class_names)
 
-    def _include_package_sensitive_dependencies(self, roots: Set[str]) -> Set[str]:
-        restricted_classes = set()
+        return ignored_class_names
+
+    def package_sensitive_dependencies(self, roots: Set[str]) -> Set[str]:
+        dependencies = {
+            class_name: set() for class_name in self.class_name_to_smali_file
+        }
+
+        restricted_classes = set(self.class_name_to_smali_file)
         restricted_methods = set()
         restricted_fields = set()
 
@@ -138,9 +151,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         for class_name, smali_file in self.class_name_to_smali_file.items():
             with open(smali_file, "r", encoding="utf-8") as current_file:
                 for line in current_file:
-                    if util.class_pattern.search(line) and (line):
-                        restricted_classes.add(class_name)
-
+                    # Looks for method declarations
                     method = util.method_pattern.search(line)
                     if method and is_package_sensitive(line):
                         restricted_methods.add(
@@ -151,6 +162,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                 method.group("method_return"),
                             )
                         )
+                    # Looks for field declarations
                     field = util.field_pattern.search(line)
                     if field and is_package_sensitive(line):
                         restricted_fields.add(
@@ -161,9 +173,6 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                             )
                         )
 
-        dependencies = {
-            class_name: set() for class_name in self.class_name_to_smali_file
-        }
 
         def connect(first: str, second: str) -> None:
             if (
@@ -239,6 +248,9 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                             ignore_class = class_name and class_name.startswith(
                                 ignore_class_prefixes
                             )
+                            preserve_package = (
+                                class_name in self.package_preserved_class_names
+                            )
 
                             # Split class name to its components and encrypt them.
                             class_tokens = self.split_class_pattern.split(
@@ -251,11 +263,18 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                 separator_index += len(token)
                                 if token == "R":
                                     r_class = True
+                                is_package_token = (
+                                    class_name[separator_index] == "/"
+                                )
                                 if token.isdigit():
                                     encrypted_class_name += (
                                         token + class_name[separator_index]
                                     )
-                                elif not r_class and not ignore_class:
+                                elif (
+                                    not r_class
+                                    and not ignore_class
+                                    and not (preserve_package and is_package_token)
+                                ):
                                     if token.endswith("_Impl"):
                                         encrypted_token = (
                                             self.encrypt_identifier(token[:-5])
@@ -653,13 +672,14 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             Xml.register_namespace(
                 "android", "http://schemas.android.com/apk/res/android"
             )
-
+            # Get the manifest root element
             xml_parser = Xml.XMLParser(encoding="utf-8")
             manifest_tree = Xml.parse(
                 obfuscation_info.get_manifest_file(), parser=xml_parser
             )
             manifest_root = manifest_tree.getroot()
 
+            # Get the package name from the manifest root element
             self.package_name = manifest_root.get("package")
             if not self.package_name:
                 raise Exception(
@@ -684,15 +704,21 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                 ] = smali_file
                                 break
 
+            # Prevent accidental hash collision with unrenamed class names
             self._reserved_class_names = set(self.class_name_to_smali_file)
 
-            # Get user defined and automatically detected keep-class names before
-            # changing the package name stored in the manifest.
+            # Get class names to ignore
             self.ignore_package_names = obfuscation_info.get_ignore_package_names()
+            ignored_class_names = self.get_class_names_to_ignore(obfuscation_info, manifest_root)
             self.ignore_package_names.extend(
-                self.get_class_names_to_ignore(obfuscation_info, manifest_root)
+                ignored_class_names
             )
 
+            # Get package-sensitive dependencies which package name cannot be renamed
+            package_sensitive_dependencies = self.package_sensitive_dependencies(ignored_class_names)
+            self.package_preserved_class_names = (
+                package_sensitive_dependencies - ignored_class_names
+            )
             self.transform_package_name(manifest_root)
 
             # Write the changes into the manifest file.
