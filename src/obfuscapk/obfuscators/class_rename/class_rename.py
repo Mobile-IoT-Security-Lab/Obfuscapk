@@ -10,8 +10,6 @@ import xml.etree.cElementTree as Xml
 from typing import Dict, List, Set, Union
 from xml.etree.cElementTree import Element
 
-from typing_extensions import ParamSpecKwargs
-
 from obfuscapk import obfuscator_category, util
 from obfuscapk.obfuscation import Obfuscation
 
