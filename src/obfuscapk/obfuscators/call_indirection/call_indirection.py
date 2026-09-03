@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import re
 from io import StringIO
 from typing import List, Set
 
@@ -19,19 +18,14 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
         self.is_adding_methods = True
 
-        self.registers_pattern = re.compile(r"[vp]\d{1,3}")
-
     def is_range(self, invoke_type: str) -> bool:
         return "range" in invoke_type
 
     def is_static(self, invoke_type: str) -> bool:
         return "static" in invoke_type
 
-    def get_registers(self, invoke_pass: str) -> List[str]:
-        return self.registers_pattern.findall(invoke_pass)
-
-    def get_register_range_count(self, register_list: List[str]) -> int:
-        return int(register_list[1][1:]) - int(register_list[0][1:]) + 1
+    def is_super(self, invoke_type: str) -> bool:
+        return "super" in invoke_type
 
     def is_void(self, invoke_return: str) -> bool:
         return invoke_return == "V"
@@ -74,11 +68,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         is_range_invocation = self.is_range(invoke_type)
         is_static_invocation = self.is_static(invoke_type)
 
-        register_list = self.get_registers(invoke_pass)
-        if is_range_invocation:
-            register_count = self.get_register_range_count(register_list)
-        else:
-            register_count = len(register_list)
+        register_count = len(util.get_invoke_registers(invoke_pass))
 
         is_void_value = self.is_void(invoke_return)
         is_wide_value = self.is_wide(invoke_return)
@@ -196,6 +186,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
                 if invoke_match:
                     if (
                         not self.is_init(invoke_match.group("invoke_method"))
+                        and not self.is_super(invoke_match.group("invoke_type"))
                         and (added_methods + new_methods_count) < max_methods_to_add
                     ):
                         # The following function will write into the file the new
@@ -222,14 +213,25 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         return new_methods_count
 
     def add_method(self, smali_file: str, new_method: StringIO):
+        new_method_code = new_method.getvalue()
+        if not new_method_code:
+            return
+
+        method_added = False
+
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
             for line in in_file:
                 if line.startswith("# direct methods"):
                     # Add the new indirection method(s) in the direct methods section.
                     out_file.write(line)
-                    out_file.write(new_method.getvalue())
+                    out_file.write(new_method_code)
+                    method_added = True
                 else:
                     out_file.write(line)
+
+            if not method_added:
+                out_file.write("\n")
+                out_file.write(new_method_code)
 
     def add_call_indirections(
         self, smali_files: List[str], max_methods_to_add: int, interactive: bool = False

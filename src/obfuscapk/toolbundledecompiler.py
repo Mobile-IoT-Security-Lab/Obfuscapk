@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import glob
 import logging
 import os
-import platform
+import re
 import shutil
 import subprocess
-from typing import List
+import tempfile
+import zipfile
 
 
 class BundleDecompiler(object):
@@ -14,53 +16,18 @@ class BundleDecompiler(object):
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
 
-        if platform.system() == "Windows":
-            self.logger.warning(
-                "BundleDecompiler is not yet available on Windows platform"
-            )
-            return
-
-        if "BUNDLE_DECOMPILER_PATH" in os.environ:
-            self.bundledecompiler_path: str = os.environ["BUNDLE_DECOMPILER_PATH"]
-        else:
-            self.bundledecompiler_path: str = "BundleDecompiler.jar"
-
-        full_bundledecompiler_path = shutil.which(self.bundledecompiler_path)
-
-        # Make sure bundle decompiler is available
-        if not os.path.isfile(full_bundledecompiler_path):
-            raise RuntimeError(
-                'Cannot find BundleDecompiler with executable "{0}"'.format(
-                    full_bundledecompiler_path
-                )
-            )
-
-        # Make sure to use the full path of the executable (needed for cross-platform
-        # compatibility).
-        if full_bundledecompiler_path is None:
-            raise RuntimeError(
-                'Something is wrong with executable "{0}"'.format(
-                    self.bundledecompiler_path
-                )
-            )
-        else:
-            self.bundledecompiler_path = full_bundledecompiler_path
+        self.baksmali = os.environ.get("BAKSMALI_PATH", "/opt/smali/baksmali.jar")
+        self.smali = os.environ.get("SMALI_PATH", "/opt/smali/smali.jar")
+        self.aapt2 = os.environ.get("AAPT2_PATH", "aapt2")
+        self.apktool = os.environ.get("APKTOOL_PATH", "apktool")
 
     def decode(
         self, aab_path: str, output_dir_path: str = None, force: bool = False
     ) -> str:
-        if platform.system() == "Windows":
-            raise NotImplementedError(
-                "BundleDecompiler is not yet available on Windows platform"
-            )
-
-        # Check if the aab file to decode is a valid file.
         if not os.path.isfile(aab_path):
             self.logger.error('Unable to find file "{0}"'.format(aab_path))
             raise FileNotFoundError('Unable to find file "{0}"'.format(aab_path))
 
-        # If no output directory is specified, use a new directory in the same
-        # directory as the aab file to decode.
         if not output_dir_path:
             output_dir_path = os.path.join(
                 os.path.dirname(aab_path),
@@ -72,75 +39,154 @@ class BundleDecompiler(object):
                 'name as the input file: "{0}"'.format(output_dir_path)
             )
 
-        # If an output directory is provided, make sure that the path to that
-        # directory exists (the final directory will be created by aabtool).
-        elif not os.path.isdir(os.path.dirname(output_dir_path)):
-            self.logger.error(
-                'Unable to find output directory "{0}", aabtool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
+        if os.path.isdir(output_dir_path):
+            if force:
+                shutil.rmtree(output_dir_path)
+            else:
+                self.logger.error(
+                    'Output directory "{0}" already exists, use the "force" flag '
+                    "to overwrite".format(output_dir_path)
                 )
-            )
-            raise NotADirectoryError(
-                'Unable to find output directory "{0}", aabtool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
+                raise FileExistsError(
+                    'Output directory "{0}" already exists, use the "force" flag '
+                    "to overwrite".format(output_dir_path)
                 )
+
+        self.logger.info(f"Extracting AAB directly to {output_dir_path}...")
+        with zipfile.ZipFile(aab_path, "r") as zip_ref:
+            zip_ref.extractall(output_dir_path)
+
+        manifest_path = os.path.join(
+            output_dir_path, "base", "manifest", "AndroidManifest.xml"
+        )
+
+        # DECODE the AndroidManifest.xml to plain XML for the plugins
+        if os.path.exists(manifest_path):
+            self.logger.info("Converting protobuf AndroidManifest.xml to plain XML...")
+            temp_proto_apk = os.path.join(output_dir_path, "temp_proto.apk")
+            temp_binary_apk = os.path.join(output_dir_path, "temp_binary.apk")
+            temp_decoded_dir = os.path.join(output_dir_path, "decoded_manifest")
+
+            # Create base prorto APK
+            temp_proto_dir = os.path.join(output_dir_path, "temp_proto_dir")
+            os.makedirs(temp_proto_dir, exist_ok=True)
+
+            shutil.move(
+                manifest_path, os.path.join(temp_proto_dir, "AndroidManifest.xml")
             )
 
-        # Inform the user if an existing output directory is provided without the
-        # "force" flag.
-        if os.path.isdir(output_dir_path) and not force:
-            self.logger.error(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
-            )
-            raise FileExistsError(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
-            )
-
-        decode_cmd: List[str] = [
-            "java",
-            "-jar",
-            self.bundledecompiler_path,
-            "d",
-            "--in=" + aab_path,
-            "--out=" + output_dir_path,
-        ]
-
-        if force:
-            self.logger.warning("Bundle Decompiler does not support force")
-
-        try:
-            self.logger.info(
-                'Running decode command "{0}"'.format(" ".join(decode_cmd))
-            )
-            # A new line character is sent as input since newer versions of aabtool
-            # have an interactive prompt on Windows where the user should press a key.
-            output = subprocess.check_output(
-                decode_cmd, stderr=subprocess.STDOUT, input=b"\n"
-            ).strip()
-            if b"Exception in thread " in output:
-                # Report exception raised in aabtool.
-                raise subprocess.CalledProcessError(1, decode_cmd, output)
-            return output.decode(errors="replace")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(
-                "Error during decode command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
+            resources_pb_path = os.path.join(output_dir_path, "base", "resources.pb")
+            if os.path.exists(resources_pb_path):
+                shutil.copy(
+                    resources_pb_path, os.path.join(temp_proto_dir, "resources.pb")
                 )
+
+            res_dir = os.path.join(output_dir_path, "base", "res")
+            if os.path.exists(res_dir):
+                shutil.move(res_dir, os.path.join(temp_proto_dir, "res"))
+
+            temp_zip_path = shutil.make_archive(temp_proto_apk, "zip", temp_proto_dir)
+            shutil.move(temp_zip_path, temp_proto_apk)
+
+            shutil.rmtree(temp_proto_dir)
+
+            # Convert proto APK to binary APK using aapt2
+            subprocess.check_call(
+                [
+                    self.aapt2,
+                    "convert",
+                    "-o",
+                    temp_binary_apk,
+                    "--output-format",
+                    "binary",
+                    temp_proto_apk,
+                ],
+                stderr=subprocess.STDOUT,
             )
-            raise
-        except Exception as e:
-            self.logger.error("Error during decoding: {0}".format(e))
-            raise
+
+            # Decode binary APK using apktool to get plain XML manifest
+            subprocess.check_call(
+                [
+                    self.apktool,
+                    "d",
+                    "--frame-path",
+                    tempfile.gettempdir(),
+                    temp_binary_apk,
+                    "-o",
+                    temp_decoded_dir,
+                    "-s",
+                    "-f",
+                ],
+                stderr=subprocess.STDOUT,
+            )
+
+            # Move the plain XML manifest and res/ to the root
+            shutil.move(
+                os.path.join(temp_decoded_dir, "AndroidManifest.xml"),
+                os.path.join(output_dir_path, "AndroidManifest.xml"),
+            )
+            decoded_res = os.path.join(temp_decoded_dir, "res")
+            base_res = os.path.join(output_dir_path, "base", "res")
+            if os.path.exists(decoded_res):
+                if os.path.exists(base_res):
+                    shutil.rmtree(base_res)
+                shutil.move(decoded_res, base_res)
+
+            os.remove(temp_proto_apk)
+            os.remove(temp_binary_apk)
+
+        # Decompile the dex files one by one using baksmali
+        dex_dir = os.path.join(output_dir_path, "base", "dex")
+        if os.path.exists(dex_dir):
+            for dex_file in os.listdir(dex_dir):
+                if dex_file.endswith(".dex"):
+                    dex_path = os.path.join(dex_dir, dex_file)
+
+                    smali_folder = (
+                        "smali"
+                        if dex_file == "classes.dex"
+                        else f"smali_{dex_file.split('.')[0]}"
+                    )
+                    smali_dir = os.path.join(output_dir_path, smali_folder)
+
+                    cmd = [
+                        "java",
+                        "-jar",
+                        self.baksmali,
+                        "d",
+                        "--api",
+                        "30",
+                        dex_path,
+                        "-o",
+                        smali_dir,
+                    ]
+                    self.logger.info(f"Disassembling {dex_file} -> {smali_folder}...")
+                    subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+
+                    os.remove(dex_path)
+
+        return output_dir_path
+
+    def _sanitize_private_resources(self, decoded_dir: str) -> None:
+        pattern = re.compile(r"(?<!\*)@android:")
+
+        xml_files = glob.glob(os.path.join(decoded_dir, "**", "*.xml"), recursive=True)
+
+        for xml_file in xml_files:
+            try:
+                with open(xml_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                new_content = pattern.sub("@*android:", content)
+
+                if new_content != content:
+                    with open(xml_file, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+            except (UnicodeDecodeError, IOError):
+                # Skip binary or unreadable files
+                continue
 
     def build(self, source_dir_path: str, output_aab_path: str = None) -> str:
-        if platform.system() == "Windows":
-            raise NotImplementedError(
-                "BundleDecompiler is not yet available on Windows platform"
-            )
 
         # Check if the input directory exists.
         if not os.path.isdir(source_dir_path):
@@ -157,54 +203,154 @@ class BundleDecompiler(object):
             output_aab_path = os.path.join(
                 source_dir_path,
                 "output",
-                "{0}.aab".format(os.path.basename(source_dir_path)),
+                f"{os.path.basename(source_dir_path)}.aab",
             )
             self.logger.debug(
                 "No output aab path provided, the new aab will be saved in the "
                 'default path: "{0}"'.format(output_aab_path)
             )
 
-        build_cmd: List[str] = [
-            "java",
-            "-jar",
-            self.bundledecompiler_path,
-            "b",
-            "--in=" + source_dir_path,
-            "--out=" + output_aab_path,
-        ]
+        os.makedirs(os.path.dirname(output_aab_path), exist_ok=True)
 
-        try:
-            self.logger.info('Running build command "{0}"'.format(" ".join(build_cmd)))
-            # A new line character is sent as input since newer versions of aabtool
-            # have an interactive prompt on Windows where the user should press a key.
-            output = subprocess.check_output(
-                build_cmd, stderr=subprocess.STDOUT, input=b"\n"
-            ).strip()
-            if (
-                b"brut.directory.PathNotExist: " in output
-                or b"Exception in thread " in output
-            ):
-                # Report exception raised in aabtool.
-                raise subprocess.CalledProcessError(1, build_cmd, output)
+        dex_dir = os.path.join(source_dir_path, "base", "dex")
+        os.makedirs(dex_dir, exist_ok=True)
 
-            if not os.path.isfile(output_aab_path):
-                raise FileNotFoundError(
-                    '"{0}" was not built correctly. aabtool output:\n{1}'.format(
-                        output_aab_path, output.decode(errors="replace")
-                    )
+        # Recompile the smali file one by one into dex using smali
+        for folder in os.listdir(source_dir_path):
+            folder_path = os.path.join(source_dir_path, folder)
+            if folder.startswith("smali") and os.path.isdir(folder_path):
+                dex_name = (
+                    "classes.dex"
+                    if folder == "smali"
+                    else f"{folder.replace('smali_', '')}.dex"
                 )
+                dex_path = os.path.join(dex_dir, dex_name)
 
-            return output.decode(errors="replace")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(
-                "Error during build command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                cmd = [
+                    "java",
+                    "-jar",
+                    self.smali,
+                    "a",
+                    "--api",
+                    "30",
+                    folder_path,
+                    "-o",
+                    dex_path,
+                ]
+                self.logger.info(f"Assembling {folder} -> {dex_name}...")
+                subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+
+                shutil.rmtree(folder_path)
+
+        root_manifest = os.path.join(source_dir_path, "AndroidManifest.xml")
+        base_res = os.path.join(source_dir_path, "base", "res")
+        temp_decoded_dir = os.path.join(source_dir_path, "decoded_manifest")
+
+        # Copy back the updated manifest to the original location as protobuf
+
+        self.logger.info(
+            "Converting plain XML AndroidManifest.xml and res/ back to protobuf..."
+        )
+        # Move manifest and res
+        shutil.move(
+            root_manifest, os.path.join(temp_decoded_dir, "AndroidManifest.xml")
+        )
+        decoded_res = os.path.join(temp_decoded_dir, "res")
+        if os.path.exists(base_res):
+            if os.path.exists(decoded_res):
+                shutil.rmtree(decoded_res)
+            shutil.move(base_res, decoded_res)
+
+        temp_modified_binary = os.path.join(source_dir_path, "temp_modified_binary.apk")
+        temp_modified_proto = os.path.join(source_dir_path, "temp_modified_proto.apk")
+
+        # Sanitize private resource references to avoid aapt2 errors
+        self._sanitize_private_resources(temp_decoded_dir)
+
+        # Build the binary APK using apktool
+        subprocess.check_call(
+            [
+                self.apktool,
+                "b",
+                "--force",
+                "--frame-path",
+                tempfile.gettempdir(),
+                temp_decoded_dir,
+                "-o",
+                temp_modified_binary,
+            ],
+            stderr=subprocess.STDOUT,
+        )
+
+        # 3. Convert it back to proto using aapt2
+        subprocess.check_call(
+            [
+                self.aapt2,
+                "convert",
+                "-o",
+                temp_modified_proto,
+                "--output-format",
+                "proto",
+                temp_modified_binary,
+            ],
+            stderr=subprocess.STDOUT,
+        )
+
+        # Extract the compiled protobuf AndroidManifest.xml, res/ and resources.pb
+        if os.path.exists(base_res):
+            shutil.rmtree(base_res)
+        with zipfile.ZipFile(temp_modified_proto, "r") as z:
+            z.extract(
+                "AndroidManifest.xml",
+                path=os.path.join(source_dir_path, "base", "manifest"),
             )
-            raise
-        except Exception as e:
-            self.logger.error("Error during building: {0}".format(e))
-            raise
+
+            if "resources.pb" in z.namelist():
+                z.extract("resources.pb", path=os.path.join(source_dir_path, "base"))
+
+            for file_info in z.infolist():
+                if file_info.filename.startswith("res/"):
+                    z.extract(file_info, os.path.join(source_dir_path, "base"))
+
+        os.remove(temp_modified_binary)
+        os.remove(temp_modified_proto)
+        shutil.rmtree(temp_decoded_dir)
+        if os.path.exists(root_manifest):
+            os.remove(root_manifest)
+
+        # Remove only the signature files
+        meta_inf_dir = os.path.join(source_dir_path, "META-INF")
+        if os.path.exists(meta_inf_dir):
+            self.logger.info("Stripping old META-INF signatures...")
+            for file in os.listdir(meta_inf_dir):
+                if (
+                    file.endswith((".SF", ".RSA", ".DSA", ".EC"))
+                    or file == "MANIFEST.MF"
+                ):
+                    os.remove(os.path.join(meta_inf_dir, file))
+
+        self.logger.info("Zipping final AAB...")
+        output_abs_path = os.path.abspath(output_aab_path)
+
+        # Zip back everything
+        with zipfile.ZipFile(output_aab_path, "w") as zipf:
+            for root, _, files in os.walk(source_dir_path):
+                for file in files:
+                    file_path = os.path.abspath(os.path.join(root, file))
+
+                    if file_path == output_abs_path:
+                        continue
+
+                    arcname = os.path.relpath(file_path, source_dir_path)
+
+                    if file.endswith(".pb") or file.endswith(".so"):
+                        zipf.write(file_path, arcname, compress_type=zipfile.ZIP_STORED)
+                    else:
+                        zipf.write(
+                            file_path, arcname, compress_type=zipfile.ZIP_DEFLATED
+                        )
+
+        return output_aab_path
 
 
 class AABSigner(object):
@@ -212,63 +358,43 @@ class AABSigner(object):
         self.logger = logging.getLogger(
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
-
-        if platform.system() == "Windows":
-            self.logger.warning(
-                "BundleDecompiler is not yet available on Windows platform"
-            )
-            return
-
-        if "BUNDLE_DECOMPILER_PATH" in os.environ:
-            self.aabsigner_path: str = os.environ["BUNDLE_DECOMPILER_PATH"]
-        else:
-            self.aabsigner_path: str = "BundleDecompiler.jar"
-
-        full_aabsigner_path = shutil.which(self.aabsigner_path)
-
-        # Make sure to use the full path of the executable (needed for cross-platform
-        # compatibility).
-        if full_aabsigner_path is None:
-            raise RuntimeError(
-                'Something is wrong with executable "{0}"'.format(self.aabsigner_path)
-            )
-        else:
-            self.aabsigner_path = full_aabsigner_path
+        self.jarsigner = shutil.which("jarsigner") or "jarsigner"
 
     def sign(
         self,
         aab_path: str,
+        keystore_file: str,
+        keystore_password: str,
+        key_alias: str,
+        key_password: str = None,
     ) -> str:
-        if platform.system() == "Windows":
-            raise NotImplementedError(
-                "BundleDecompiler is not yet available on Windows platform"
-            )
-
-        # Check if the aab file to sign is a valid file.
         if not os.path.isfile(aab_path):
-            self.logger.error('Unable to find file "{0}"'.format(aab_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(aab_path))
+            raise FileNotFoundError(f'Unable to find file "{aab_path}"')
 
-        sign_cmd: List[str] = [
-            "java",
-            "-jar",
-            self.aabsigner_path,
-            "sign-bundle",
-            "--in=" + aab_path,
-            "--out=" + aab_path.replace(".aab", "_signed.aab"),
+        sign_cmd = [
+            self.jarsigner,
+            "-verbose",
+            "-sigalg",
+            "SHA256withRSA",
+            "-digestalg",
+            "SHA-256",
+            "-keystore",
+            keystore_file,
+            "-storepass",
+            keystore_password,
         ]
 
+        if key_password:
+            sign_cmd.extend(["-keypass", key_password])
+
+        sign_cmd.extend([aab_path, key_alias])
+
         try:
-            self.logger.info('Running sign command "{0}"'.format(" ".join(sign_cmd)))
+            self.logger.info("Running jarsigner command on AAB...")
             output = subprocess.check_output(sign_cmd, stderr=subprocess.STDOUT).strip()
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                "Error during sign command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                f"Error during sign command: {e.output.decode(errors='replace') if e.output else e}"
             )
-            raise
-        except Exception as e:
-            self.logger.error("Error during signing: {0}".format(e))
             raise

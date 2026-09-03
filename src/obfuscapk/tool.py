@@ -83,12 +83,12 @@ class Apktool(object):
 
         decode_cmd: List[str] = [
             self.apktool_path,
+            "d",
             "--frame-path",
             tempfile.gettempdir(),
-            "d",
-            apk_path,
             "-o",
             output_dir_path,
+            apk_path,
         ]
 
         if force:
@@ -118,9 +118,7 @@ class Apktool(object):
             self.logger.error("Error during decoding: {0}".format(e))
             raise
 
-    def build(
-        self, source_dir_path: str, output_apk_path: str = None, use_aapt2: bool = False
-    ) -> str:
+    def build(self, source_dir_path: str, output_apk_path: str = None) -> str:
         # Check if the input directory exists.
         if not os.path.isdir(source_dir_path):
             self.logger.error(
@@ -145,17 +143,14 @@ class Apktool(object):
 
         build_cmd: List[str] = [
             self.apktool_path,
+            "b",
             "--frame-path",
             tempfile.gettempdir(),
-            "b",
-            "--force-all",
-            source_dir_path,
+            "--force",
             "-o",
             output_apk_path,
+            source_dir_path,
         ]
-
-        if use_aapt2:
-            build_cmd.insert(-2, "--use-aapt2")
 
         try:
             self.logger.info('Running build command "{0}"'.format(" ".join(build_cmd)))
@@ -341,13 +336,24 @@ class ApkSigner(object):
         # archive, an OS independent solution is to create a new archive without
         # including the signature files.
 
+        def is_signature_file(filename: str) -> bool:
+            filename = filename.upper()
+            if not filename.startswith("META-INF/"):
+                return False
+
+            filename = filename[len("META-INF/") :]
+            return "/" not in filename and (
+                filename == "MANIFEST.MF"
+                or filename.endswith((".SF", ".RSA", ".DSA", ".EC"))
+            )
+
         try:
             unsigned_apk_buffer = io.BytesIO()
 
             with zipfile.ZipFile(apk_path, "r") as current_apk:
                 # Check if the current apk is already signed.
                 if any(
-                    entry.filename.startswith("META-INF/")
+                    is_signature_file(entry.filename)
                     for entry in current_apk.infolist()
                 ):
                     self.logger.info(
@@ -359,7 +365,7 @@ class ApkSigner(object):
                         unsigned_apk_buffer, "w"
                     ) as unsigned_apk_zip_buffer:
                         for entry in current_apk.infolist():
-                            if not entry.filename.startswith("META-INF/"):
+                            if not is_signature_file(entry.filename):
                                 unsigned_apk_zip_buffer.writestr(
                                     entry, current_apk.read(entry.filename)
                                 )

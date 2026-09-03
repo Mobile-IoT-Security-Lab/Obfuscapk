@@ -247,6 +247,9 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                                 encrypted_res_strings.add(
                                     string_id_to_string_name[id_match.group("id")]
                                 )
+                            else:
+                                # The string will not be encrypted, so don't decrypt it.
+                                string_index[string_number] = -1
 
                             # Proceed with the next asset file (if any).
                             break
@@ -284,6 +287,9 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                                 encrypted_res_string_arrays.add(
                                     string_array_id_to_string_name[id_match.group("id")]
                                 )
+                            else:
+                                # The string array will not be encrypted, so don't decrypt it.
+                                string_array_index[string_array_number] = -1
 
                             # Proceed with the next asset file (if any).
                             break
