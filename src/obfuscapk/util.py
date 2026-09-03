@@ -133,6 +133,24 @@ const_class_pattern = re.compile(
     re.UNICODE,
 )
 
+# <spaces> const[/variant] <register>, <integer>
+const_int_pattern = re.compile(
+    r"\s+const(?:/\S+)?\s(?P<register>[vp]\d+),\s*"
+    r"(?P<value>-?(?:0x[0-9a-fA-F]+|\d+))"
+)
+
+# Create a java.lang.Class array using a size stored in another register.
+new_class_array_pattern = re.compile(
+    r"\s+new-array\s(?P<array>[vp]\d+),\s*(?P<size>[vp]\d+),\s*"
+    r"\[Ljava/lang/Class;"
+)
+
+# Store an object in an array using registers for the value, array and index.
+array_put_object_pattern = re.compile(
+    r"\s+aput-object\s(?P<value>[vp]\d+),\s*(?P<array>[vp]\d+),\s*"
+    r"(?P<index>[vp]\d+)"
+)
+
 # Generic Smali instructions and registers used by lightweight code analysis.
 smali_register_pattern = re.compile(r"[vp]\d+")
 smali_move_pattern = re.compile(
