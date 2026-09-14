@@ -280,12 +280,12 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
     ) -> Set[str]:
         renamed_fields: Set[str] = set()
 
-        if self.has_unknown_field_reflection:
-            self.logger.warning(
-                "Skipping field renaming because neither the reflective field "
-                "name nor its target class could be resolved"
-            )
-            return renamed_fields
+        # if self.has_unknown_field_reflection:
+        #     self.logger.warning(
+        #         "Skipping field renaming because neither the reflective field "
+        #         "name nor its target class could be resolved"
+        #     )
+        #     return renamed_fields
 
         for smali_file in util.show_list_progress(
             smali_files,

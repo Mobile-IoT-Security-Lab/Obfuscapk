@@ -516,6 +516,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
         try:
             max_methods_to_add = obfuscation_info.get_remaining_methods_per_obfuscator()
 
+            # Map class names to their corresponding smali files
             for smali_file in util.show_list_progress(
                 obfuscation_info.get_smali_files(),
                 interactive=obfuscation_info.interactive,
@@ -769,7 +770,7 @@ class Reflection(obfuscator_category.ICodeObfuscator):
                     with open(smali_file, "w", encoding="utf-8") as current_file:
                         current_file.writelines(lines)
 
-
+            # close the current chunk
             if current_chunk_code:
                 method_decl = (
                     "\n.method private static init{0}()V\n\t.locals 4\n\n".format(

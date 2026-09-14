@@ -482,7 +482,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             or " access$" in declaration
             or " synthetic " in declaration
             or " bridge " in declaration
-            or self.has_unknown_method_reflection
+            # or self.has_unknown_method_reflection
         ):
             return False, method_family
 
@@ -677,11 +677,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             self.collect_xml_callback_names(resource_directory)
             self.prepare_xml_callback_renaming()
 
-            if self.has_unknown_method_reflection:
-                self.logger.warning(
-                    "Skipping method renaming because a reflective method name "
-                    "could not be resolved"
-                )
+            # if self.has_unknown_method_reflection:
+            #     self.logger.warning(
+            #         "Skipping method renaming because a reflective method name "
+            #         "could not be resolved"
+            #     )
 
             renamed_methods = self.rename_method_declarations(
                 smali_files,
