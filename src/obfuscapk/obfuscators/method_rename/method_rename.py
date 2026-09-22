@@ -505,7 +505,8 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             family_info = self.classes[family_class]
             family_declaration = self.get_method_declaration(family_key)
             if (
-                not family_info.selected
+                family_key in self.reflected_method_keys
+                or not family_info.selected
                 or family_info.is_enum
                 or family_info.has_native_methods
                 or " access$" in family_declaration
