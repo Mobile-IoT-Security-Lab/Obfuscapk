@@ -201,17 +201,24 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 if static_string_encryption_code != "":
                     if static_constructor_line != -1:
                         # Add static string encryption to the existing static constructor.
-                        local_match = util.locals_pattern.search(
-                            lines[static_constructor_line + 1]
-                        )
-                        if local_match:
-                            # At least one register is needed.
-                            local_count = int(local_match.group("local_count"))
-                            if local_count == 0:
-                                lines[static_constructor_line + 1] = "\t.locals 1\n"
-                            lines[static_constructor_line + 2] = "\n{0}".format(
-                                static_string_encryption_code
-                            )
+                        for i in range(static_constructor_line + 1, len(lines)):
+                            if lines[i].startswith(".end method"):
+                                break
+
+                            local_match = util.locals_pattern.search(lines[i])
+                            if local_match:
+                                # At least one register is needed.
+                                local_count = int(local_match.group("local_count"))
+                                directive = lines[i].strip().split()[0]
+                                if local_count == 0:
+                                    lines[i] = "\t{0} 1\n".format(directive)
+
+                                # Safely inject encryption code right after the locals/registers directive
+                                lines[i] = "{0}\n\n{1}".format(
+                                    lines[i].rstrip(),
+                                    static_string_encryption_code
+                                )
+                                break
                     else:
                         # Add a new static constructor for the static string encryption.
                         if direct_methods_line != -1:

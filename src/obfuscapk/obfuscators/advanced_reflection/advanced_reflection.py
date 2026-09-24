@@ -313,7 +313,41 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
         try:
             # There is a method limit for dex files.
-            max_methods_to_add = obfuscation_info.get_remaining_methods_per_obfuscator()
+            helper_method_margin = 8
+            remaining_methods = obfuscation_info.get_remaining_methods_per_obfuscator()
+            smali_files = obfuscation_info.get_smali_files()
+            helper_smali_files = smali_files
+
+            if isinstance(remaining_methods, int):
+                method_limits = [max(0, remaining_methods - helper_method_margin)]
+                dex_index_by_file = {smali_file: 0 for smali_file in smali_files}
+                helper_dex_index = 0
+            else:
+                multidex_smali_files = obfuscation_info.get_multidex_smali_files()
+                helper_dex_index = max(
+                    (
+                        index
+                        for index, dex_smali_files in enumerate(multidex_smali_files)
+                        if dex_smali_files
+                    ),
+                    key=remaining_methods.__getitem__,
+                    default=0,
+                )
+                helper_smali_files = multidex_smali_files[helper_dex_index] or smali_files
+                method_limits = [
+                    max(0, limit - helper_method_margin)
+                    if index == helper_dex_index
+                    else max(0, limit)
+                    for index, limit in enumerate(remaining_methods)
+                ]
+                dex_index_by_file = {
+                    smali_file: index
+                    for index, dex_smali_files in enumerate(multidex_smali_files)
+                    for smali_file in dex_smali_files
+                }
+
+            methods_added_by_dex = [0] * len(method_limits)
+            max_methods_to_add = method_limits[helper_dex_index]
 
             dangerous_api: Set[str] = set(util.get_dangerous_api())
 
@@ -327,10 +361,14 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
             )
 
             for smali_file in util.show_list_progress(
-                obfuscation_info.get_smali_files(),
+                smali_files,
                 interactive=obfuscation_info.interactive,
                 description="Obfuscating dangerous APIs using reflection",
             ):
+                dex_index = dex_index_by_file[smali_file]
+                if methods_added_by_dex[dex_index] >= method_limits[dex_index]:
+                    continue
+
                 self.logger.debug(
                     'Obfuscating dangerous APIs using reflection in file "{0}"'.format(
                         smali_file
@@ -412,7 +450,11 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                 if method not in dangerous_api:
                                     continue
 
-                                if self.methods_with_reflection >= max_methods_to_add:
+                                if (
+                                    self.methods_with_reflection >= max_methods_to_add
+                                    or methods_added_by_dex[dex_index]
+                                    >= method_limits[dex_index]
+                                ):
                                     break
 
                                 if (
@@ -539,6 +581,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                 )
 
                                 self.methods_with_reflection += 1
+                                methods_added_by_dex[dex_index] += 1
 
                                 # Add the registers needed for performing reflection.
                                 lines[index + 1] = "\t.locals {0}\n".format(
@@ -551,7 +594,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
             # Add to the app the code needed for the reflection obfuscator. The code
             # can be put in any smali directory, since it will be moved to the correct
             # directory when rebuilding the application.
-            destination_dir = os.path.dirname(obfuscation_info.get_smali_files()[0])
+            destination_dir = os.path.dirname(helper_smali_files[0])
             destination_file = os.path.join(
                 destination_dir, "AdvancedApiReflection.smali"
             )

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import re
 
 from obfuscapk import obfuscator_category
 from obfuscapk import util
@@ -8,11 +9,55 @@ from obfuscapk.obfuscation import Obfuscation
 
 
 class ArithmeticBranch(obfuscator_category.ICodeObfuscator):
+    registers_pattern = re.compile(
+        r"\s+\.(?P<directive>locals|registers)\s(?P<register_count>\d+)"
+    )
+
     def __init__(self):
         self.logger = logging.getLogger(
             "{0}.{1}".format(__name__, self.__class__.__name__)
         )
         super().__init__()
+
+    def get_param_register_count(self, method_line: str) -> int:
+        method_match = util.method_pattern.search(method_line)
+        if not method_match:
+            return 0
+
+        param_register_count = 0 if "static" in method_line.split() else 1
+        params = method_match.group("method_param")
+        param_index = 0
+
+        while param_index < len(params):
+            if params[param_index] == "[":
+                while param_index < len(params) and params[param_index] == "[":
+                    param_index += 1
+
+                if param_index < len(params) and params[param_index] == "L":
+                    param_index = params.index(";", param_index) + 1
+                else:
+                    param_index += 1
+
+                param_register_count += 1
+            elif params[param_index] == "L":
+                param_index = params.index(";", param_index) + 1
+                param_register_count += 1
+            else:
+                param_register_count += 2 if params[param_index] in ("J", "D") else 1
+                param_index += 1
+
+        return param_register_count
+
+    def get_free_local_registers(self, method_line: str, registers_line: str) -> int:
+        registers_match = self.registers_pattern.search(registers_line)
+        if not registers_match:
+            return 0
+
+        register_count = int(registers_match.group("register_count"))
+        if registers_match.group("directive") == "locals":
+            return register_count
+
+        return register_count - self.get_param_register_count(method_line)
 
     def obfuscate(self, obfuscation_info: Obfuscation):
         self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
@@ -28,6 +73,7 @@ class ArithmeticBranch(obfuscator_category.ICodeObfuscator):
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
                     editing_method = False
+                    method_line = None
                     start_label = None
                     end_label = None
                     for line in in_file:
@@ -40,6 +86,7 @@ class ArithmeticBranch(obfuscator_category.ICodeObfuscator):
                             # Entering method.
                             out_file.write(line)
                             editing_method = True
+                            method_line = line
 
                         elif line.startswith(".end method") and editing_method:
                             # Exiting method.
@@ -50,12 +97,16 @@ class ArithmeticBranch(obfuscator_category.ICodeObfuscator):
                                 end_label = None
                             out_file.write(line)
                             editing_method = False
+                            method_line = None
 
                         elif editing_method:
                             # Inside method.
                             out_file.write(line)
-                            match = util.locals_pattern.search(line)
-                            if match and int(match.group("local_count")) >= 2:
+                            if (
+                                method_line
+                                and self.get_free_local_registers(method_line, line)
+                                >= 2
+                            ):
                                 # If there are at least 2 registers available, add a
                                 # fake branch at the beginning of the method: one branch
                                 # will continue from here, the other branch will go to

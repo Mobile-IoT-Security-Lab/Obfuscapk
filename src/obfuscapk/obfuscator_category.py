@@ -2,12 +2,10 @@
 
 from abc import ABC, abstractmethod
 
-from yapsy.IPlugin import IPlugin
-
 from obfuscapk.obfuscation import Obfuscation
 
 
-class IBaseObfuscator(ABC, IPlugin):
+class IBaseObfuscator(ABC):
     def __init__(self):
         super().__init__()
 

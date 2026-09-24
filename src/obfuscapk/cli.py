@@ -3,7 +3,7 @@
 import argparse
 import logging
 
-from obfuscapk.main import perform_obfuscation, check_external_tool_dependencies
+from obfuscapk.main import check_external_tool_dependencies, perform_obfuscation
 from obfuscapk.obfuscator_manager import ObfuscatorManager
 
 logger = logging.getLogger(__name__)
@@ -154,6 +154,7 @@ def main():
     check_external_tool_dependencies()
 
     import sys
+
     arguments = get_cmd_args()
 
     if not arguments.interactive and sys.stdout.isatty():
@@ -202,7 +203,6 @@ def main():
         arguments.key_alias,
         arguments.key_password,
         arguments.ignore_packages_file,
-        arguments.use_aapt2,
         arguments.cleanup,
         arguments.output_dir,
     )
