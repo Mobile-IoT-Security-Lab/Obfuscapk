@@ -24,11 +24,10 @@ class TestCommandLine(object):
 
         # Mock the command line parser.
         arguments = cli.get_cmd_args(
-            "-w {working_dir} -d {destination} "
-            "-o Rebuild -o NewAlignment -o NewSignature {apk_file}".format(
-                working_dir=tmp_working_directory_path,
-                destination=obfuscated_apk_path,
-                apk_file=tmp_demo_apk_v10_original_path,
+            (
+                f"-w {tmp_working_directory_path} -d {obfuscated_apk_path} "
+                "-o Rebuild -o NewAlignment -o NewSignature "
+                f"{tmp_demo_apk_v10_original_path}"
             ).split()
         )
         monkeypatch.setattr(cli, "get_cmd_args", lambda: arguments)
@@ -47,11 +46,10 @@ class TestCommandLine(object):
 
         # Mock the command line parser.
         arguments = cli.get_cmd_args(
-            "-w '{working_dir}' -d \"{destination}\" "
-            "-o Rebuild -k \"key1\" -k 'key2' '{apk_file}'".format(
-                working_dir=tmp_working_directory_path,
-                destination=obfuscated_apk_path,
-                apk_file=tmp_demo_apk_v10_original_path,
+            (
+                f"-w '{tmp_working_directory_path}' -d \"{obfuscated_apk_path}\" "
+                "-o Rebuild -k \"key1\" -k 'key2' "
+                f"'{tmp_demo_apk_v10_original_path}'"
             ).split()
         )
         monkeypatch.setattr(cli, "get_cmd_args", lambda: arguments)
@@ -67,26 +65,23 @@ class TestCommandLine(object):
         monkeypatch,
     ):
         obfuscated_apk_path = os.path.join(tmp_working_directory_path, "obfuscated.apk")
+        keystore_file = os.path.join(
+            os.path.dirname(__file__),
+            os.path.pardir,
+            "obfuscapk",
+            "resources",
+            "obfuscation_keystore.jks",
+        )
 
         # Mock the command line parser.
         arguments = cli.get_cmd_args(
-            "-w {working_dir} -d {destination} "
-            "-o Rebuild -o NewAlignment -o NewSignature "
-            "--keystore-file {keystore_file} --keystore-password {keystore_password} "
-            "--key-alias {key_alias} --key-password {key_password} {apk_file}".format(
-                working_dir=tmp_working_directory_path,
-                destination=obfuscated_apk_path,
-                apk_file=tmp_demo_apk_v10_original_path,
-                keystore_file=os.path.join(
-                    os.path.dirname(__file__),
-                    os.path.pardir,
-                    "obfuscapk",
-                    "resources",
-                    "obfuscation_keystore.jks",
-                ),
-                keystore_password="obfuscation_password",
-                key_alias="obfuscation_key",
-                key_password="obfuscation_password",
+            (
+                f"-w {tmp_working_directory_path} -d {obfuscated_apk_path} "
+                "-o Rebuild -o NewAlignment -o NewSignature "
+                f"--keystore-file {keystore_file} "
+                "--keystore-password obfuscation_password "
+                "--key-alias obfuscation_key --key-password obfuscation_password "
+                f"{tmp_demo_apk_v10_original_path}"
             ).split()
         )
         monkeypatch.setattr(cli, "get_cmd_args", lambda: arguments)

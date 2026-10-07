@@ -12,9 +12,7 @@ from typing import List
 
 class Apktool(object):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         if "APKTOOL_PATH" in os.environ:
             self.apktool_path: str = os.environ["APKTOOL_PATH"]
@@ -27,7 +25,7 @@ class Apktool(object):
         # compatibility).
         if full_apktool_path is None:
             raise RuntimeError(
-                'Something is wrong with executable "{0}"'.format(self.apktool_path)
+                f'Something is wrong with executable "{self.apktool_path}"'
             )
         else:
             self.apktool_path = full_apktool_path
@@ -37,8 +35,8 @@ class Apktool(object):
     ) -> str:
         # Check if the apk file to decode is a valid file.
         if not os.path.isfile(apk_path):
-            self.logger.error('Unable to find file "{0}"'.format(apk_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(apk_path))
+            self.logger.error(f'Unable to find file "{apk_path}"')
+            raise FileNotFoundError(f'Unable to find file "{apk_path}"')
 
         # If no output directory is specified, use a new directory in the same
         # directory as the apk file to decode.
@@ -48,37 +46,33 @@ class Apktool(object):
                 os.path.splitext(os.path.basename(apk_path))[0],
             )
             self.logger.debug(
-                "No output directory provided, the result will be saved in the "
-                "same directory as the input file, in a directory with the same "
-                'name as the input file: "{0}"'.format(output_dir_path)
+                "No output directory provided, the result will be saved in the same"
+                " directory as the input file, in a directory with the same name as"
+                f' the input file: "{output_dir_path}"'
             )
 
         # If an output directory is provided, make sure that the path to that
         # directory exists (the final directory will be created by apktool).
         elif not os.path.isdir(os.path.dirname(output_dir_path)):
             self.logger.error(
-                'Unable to find output directory "{0}", apktool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
-                )
+                f'Unable to find output directory "{os.path.dirname(output_dir_path)}",'
+                f' apktool won\'t be able to create the directory "{output_dir_path}"'
             )
             raise NotADirectoryError(
-                'Unable to find output directory "{0}", apktool won\'t be able to '
-                'create the directory "{1}"'.format(
-                    os.path.dirname(output_dir_path), output_dir_path
-                )
+                f'Unable to find output directory "{os.path.dirname(output_dir_path)}",'
+                f' apktool won\'t be able to create the directory "{output_dir_path}"'
             )
 
         # Inform the user if an existing output directory is provided without the
         # "force" flag.
         if os.path.isdir(output_dir_path) and not force:
             self.logger.error(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
+                f'Output directory "{output_dir_path}" already exists, use the "force"'
+                " flag to overwrite"
             )
             raise FileExistsError(
-                'Output directory "{0}" already exists, use the "force" flag '
-                "to overwrite".format(output_dir_path)
+                f'Output directory "{output_dir_path}" already exists, use the "force"'
+                " flag to overwrite"
             )
 
         decode_cmd: List[str] = [
@@ -95,9 +89,7 @@ class Apktool(object):
             decode_cmd.insert(4, "--force")
 
         try:
-            self.logger.info(
-                'Running decode command "{0}"'.format(" ".join(decode_cmd))
-            )
+            self.logger.info(f"Running decode command \"{' '.join(decode_cmd)}\"")
             # A new line character is sent as input since newer versions of Apktool
             # have an interactive prompt on Windows where the user should press a key.
             output = subprocess.check_output(
@@ -109,23 +101,20 @@ class Apktool(object):
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                "Error during decode command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                "Error during decode command:"
+                f" {e.output.decode(errors='replace') if e.output else e}"
             )
             raise
         except Exception as e:
-            self.logger.error("Error during decoding: {0}".format(e))
+            self.logger.error(f"Error during decoding: {e}")
             raise
 
     def build(self, source_dir_path: str, output_apk_path: str = None) -> str:
         # Check if the input directory exists.
         if not os.path.isdir(source_dir_path):
-            self.logger.error(
-                'Unable to find source directory "{0}"'.format(source_dir_path)
-            )
+            self.logger.error(f'Unable to find source directory "{source_dir_path}"')
             raise NotADirectoryError(
-                'Unable to find source directory "{0}"'.format(source_dir_path)
+                f'Unable to find source directory "{source_dir_path}"'
             )
 
         # If no output apk path is specified, the new apk will be saved in the
@@ -134,11 +123,11 @@ class Apktool(object):
             output_apk_path = os.path.join(
                 source_dir_path,
                 "dist",
-                "{0}.apk".format(os.path.basename(source_dir_path)),
+                f"{os.path.basename(source_dir_path)}.apk",
             )
             self.logger.debug(
-                "No output apk path provided, the new apk will be saved in the "
-                'default path: "{0}"'.format(output_apk_path)
+                "No output apk path provided, the new apk will be saved in the default"
+                f' path: "{output_apk_path}"'
             )
 
         build_cmd: List[str] = [
@@ -153,7 +142,7 @@ class Apktool(object):
         ]
 
         try:
-            self.logger.info('Running build command "{0}"'.format(" ".join(build_cmd)))
+            self.logger.info(f"Running build command \"{' '.join(build_cmd)}\"")
             # A new line character is sent as input since newer versions of Apktool
             # have an interactive prompt on Windows where the user should press a key.
             output = subprocess.check_output(
@@ -168,29 +157,25 @@ class Apktool(object):
 
             if not os.path.isfile(output_apk_path):
                 raise FileNotFoundError(
-                    '"{0}" was not built correctly. Apktool output:\n{1}'.format(
-                        output_apk_path, output.decode(errors="replace")
-                    )
+                    f'"{output_apk_path}" was not built correctly. Apktool'
+                    f" output:\n{output.decode(errors='replace')}"
                 )
 
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                "Error during build command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                "Error during build command:"
+                f" {e.output.decode(errors='replace') if e.output else e}"
             )
             raise
         except Exception as e:
-            self.logger.error("Error during building: {0}".format(e))
+            self.logger.error(f"Error during building: {e}")
             raise
 
 
 class Zipalign(object):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         if "ZIPALIGN_PATH" in os.environ:
             self.zipalign_path: str = os.environ["ZIPALIGN_PATH"]
@@ -203,7 +188,7 @@ class Zipalign(object):
         # compatibility).
         if full_zipalign_path is None:
             raise RuntimeError(
-                'Something is wrong with executable "{0}"'.format(self.zipalign_path)
+                f'Something is wrong with executable "{self.zipalign_path}"'
             )
         else:
             self.zipalign_path = full_zipalign_path
@@ -211,15 +196,13 @@ class Zipalign(object):
     def align(self, apk_path: str) -> str:
         # Check if the apk file to align is a valid file.
         if not os.path.isfile(apk_path):
-            self.logger.error('Unable to find file "{0}"'.format(apk_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(apk_path))
+            self.logger.error(f'Unable to find file "{apk_path}"')
+            raise FileNotFoundError(f'Unable to find file "{apk_path}"')
 
         # Since zipalign cannot be run inplace, a temp file will be created.
-        apk_copy_path = "{0}.copy.apk".format(
-            os.path.join(
-                os.path.dirname(apk_path),
-                os.path.splitext(os.path.basename(apk_path))[0],
-            )
+        apk_copy_path = (
+            f"{os.path.join(os.path.dirname(apk_path), os.path.splitext(os.path.basename(apk_path))[0])}"
+            f".copy.apk"
         )
 
         try:
@@ -235,20 +218,19 @@ class Zipalign(object):
                 apk_path,
             ]
 
-            self.logger.info('Running align command "{0}"'.format(" ".join(align_cmd)))
+            self.logger.info(f"Running align command \"{' '.join(align_cmd)}\"")
             output = subprocess.check_output(
                 align_cmd, stderr=subprocess.STDOUT
             ).strip()
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                "Error during align command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                "Error during align command:"
+                f" {e.output.decode(errors='replace') if e.output else e}"
             )
             raise
         except Exception as e:
-            self.logger.error("Error during aligning: {0}".format(e))
+            self.logger.error(f"Error during aligning: {e}")
             raise
         finally:
             # Remove the temp file used for zipalign.
@@ -258,9 +240,7 @@ class Zipalign(object):
 
 class ApkSigner(object):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         if "APKSIGNER_PATH" in os.environ:
             self.apksigner_path: str = os.environ["APKSIGNER_PATH"]
@@ -273,7 +253,7 @@ class ApkSigner(object):
         # compatibility).
         if full_apksigner_path is None:
             raise RuntimeError(
-                'Something is wrong with executable "{0}"'.format(self.apksigner_path)
+                f'Something is wrong with executable "{self.apksigner_path}"'
             )
         else:
             self.apksigner_path = full_apksigner_path
@@ -288,8 +268,8 @@ class ApkSigner(object):
     ) -> str:
         # Check if the apk file to sign is a valid file.
         if not os.path.isfile(apk_path):
-            self.logger.error('Unable to find file "{0}"'.format(apk_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(apk_path))
+            self.logger.error(f'Unable to find file "{apk_path}"')
+            raise FileNotFoundError(f'Unable to find file "{apk_path}"')
 
         sign_cmd: List[str] = [
             self.apksigner_path,
@@ -309,18 +289,17 @@ class ApkSigner(object):
             sign_cmd.insert(-1, f"pass:{key_password}")
 
         try:
-            self.logger.info('Running sign command "{0}"'.format(" ".join(sign_cmd)))
+            self.logger.info(f"Running sign command \"{' '.join(sign_cmd)}\"")
             output = subprocess.check_output(sign_cmd, stderr=subprocess.STDOUT).strip()
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                "Error during sign command: {0}".format(
-                    e.output.decode(errors="replace") if e.output else e
-                )
+                "Error during sign command:"
+                f" {e.output.decode(errors='replace') if e.output else e}"
             )
             raise
         except Exception as e:
-            self.logger.error("Error during signing: {0}".format(e))
+            self.logger.error(f"Error during signing: {e}")
             raise
 
     def resign(
@@ -357,7 +336,7 @@ class ApkSigner(object):
                     for entry in current_apk.infolist()
                 ):
                     self.logger.info(
-                        'Removing current signature from apk "{0}"'.format(apk_path)
+                        f'Removing current signature from apk "{apk_path}"'
                     )
 
                     # Create a new in-memory archive without the signature.
@@ -375,9 +354,7 @@ class ApkSigner(object):
                         unsigned_apk.write(unsigned_apk_buffer.getvalue())
 
         except Exception as e:
-            self.logger.error(
-                "Error during the removal of the old signature: {0}".format(e)
-            )
+            self.logger.error(f"Error during the removal of the old signature: {e}")
             raise
 
         return self.sign(

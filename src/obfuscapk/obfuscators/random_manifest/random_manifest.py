@@ -16,9 +16,7 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
     )
 
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
     # http://effbot.org/zone/element-lib.htm#prettyprint
@@ -132,7 +130,7 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
                 application.append(child)
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             # Change default namespace.
@@ -155,9 +153,7 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

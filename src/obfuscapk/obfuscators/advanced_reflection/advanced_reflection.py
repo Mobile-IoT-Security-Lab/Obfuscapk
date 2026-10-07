@@ -12,9 +12,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class AdvancedReflection(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.methods_with_reflection: int = 0
@@ -80,7 +78,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
             if possible_class:
                 if possible_class.startswith("L"):
                     # Class.
-                    params.append("{0};".format(possible_class))
+                    params.append(f"{possible_class};")
                 elif possible_class.startswith("["):
                     # Array + other optional parameters (e.g. [ILjava/lang/Object).
                     for string_position in range(1, len(possible_class)):
@@ -89,7 +87,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                             continue
                         elif possible_class[string_position] == "L":
                             # Class array, no need to proceed with the next char.
-                            params.append("{0};".format(possible_class))
+                            params.append(f"{possible_class};")
                             break
                         else:
                             # Primitive type array, add it to the list and proceed with
@@ -126,7 +124,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
     ) -> str:
         params = self.split_method_params(param_string)
 
-        smali_code = "\n\tconst/4 v1, {param_num:#x}\n\n".format(param_num=len(params))
+        smali_code = f"\n\tconst/4 v1, {len(params):#x}\n\n"
         self.obfuscator_instructions_length += 1
 
         if len(params) > 0:
@@ -134,27 +132,22 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
             self.obfuscator_instructions_length += 2
 
         for param_index, param in enumerate(params):
-            smali_code += "\tconst/4 v2, {param_num:#x}\n\n".format(
-                param_num=param_index
-            )
+            smali_code += f"\tconst/4 v2, {param_index:#x}\n\n"
             self.obfuscator_instructions_length += 1
 
             class_param = self.sget_dict.get(param, None)
             if class_param:
-                smali_code += "\tsget-object v3, {param}\n\n".format(param=class_param)
+                smali_code += f"\tsget-object v3, {class_param}\n\n"
                 self.obfuscator_instructions_length += 2
             else:
-                smali_code += "\tconst-class v3, {param}\n\n".format(param=param)
+                smali_code += f"\tconst-class v3, {param}\n\n"
                 self.obfuscator_instructions_length += 2
 
             smali_code += "\taput-object v3, v1, v2\n\n"
             self.obfuscator_instructions_length += 2
 
         smali_code += (
-            "\tconst-class v2, {class_name}\n\n"
-            '\tconst-string v3, "{method_name}"\n\n'.format(
-                class_name=class_name, method_name=method_name
-            )
+            f'\tconst-class v2, {class_name}\n\n\tconst-string v3, "{method_name}"\n\n'
         )
         self.obfuscator_instructions_length += 4
 
@@ -196,9 +189,9 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
         params = self.split_method_params(invoke_parameters)
 
-        param_to_register: List[
-            List[str]
-        ] = []  # list[i][0] = i-th param, list[i][1] = [i-th param register(s)]
+        param_to_register: List[List[str]] = (
+            []
+        )  # list[i][0] = i-th param, list[i][1] = [i-th param register(s)]
 
         if is_virtual_method:
             # If this is a virtual method, the first register is the object instance
@@ -234,9 +227,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     )
                     register_index += 1
 
-        smali_code = "\tconst/4 #reg1#, {register_num:#x}\n\n".format(
-            register_num=len(params)
-        )
+        smali_code = f"\tconst/4 #reg1#, {len(params):#x}\n\n"
 
         if len(params) > 0:
             smali_code += "\tnew-array #reg1#, #reg1#, [Ljava/lang/Object;\n\n"
@@ -251,47 +242,34 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     if len(param_and_register[1]) > 1:
                         # 2 register parameter.
                         smali_code += (
-                            "\tinvoke-static {{{register_pair}}}, {cast}\n\n"
-                            "\tmove-result-object #reg2#\n\n".format(
-                                register_pair=", ".join(param_and_register[1]),
-                                cast=cast_primitive_to_class,
-                            )
+                            f"\tinvoke-static {{{', '.join(param_and_register[1])}}},"
+                            f" {cast_primitive_to_class}\n\n\tmove-result-object"
+                            " #reg2#\n\n"
                         )
                     else:
                         smali_code += (
-                            "\tinvoke-static {{{register}}}, {cast}\n\n"
-                            "\tmove-result-object #reg2#\n\n".format(
-                                register=param_and_register[1][0],
-                                cast=cast_primitive_to_class,
-                            )
+                            f"\tinvoke-static {{{param_and_register[1][0]}}},"
+                            f" {cast_primitive_to_class}\n\n\tmove-result-object"
+                            " #reg2#\n\n"
                         )
 
                     smali_code += (
-                        "\tconst/4 #reg4#, {param_index:#x}\n\n"
-                        "\taput-object #reg2#, #reg1#, #reg4#\n\n".format(
-                            param_index=param_index
-                        )
+                        f"\tconst/4 #reg4#, {param_index:#x}\n\n\taput-object #reg2#,"
+                        " #reg1#, #reg4#\n\n"
                     )
 
                 else:
                     smali_code += (
-                        "\tconst/4 #reg3#, {param_index:#x}\n\n"
-                        "\taput-object {register}, #reg1#, #reg3#\n\n".format(
-                            param_index=param_index, register=param_and_register[1][0]
-                        )
+                        f"\tconst/4 #reg3#, {param_index:#x}\n\n\taput-object"
+                        f" {param_and_register[1][0]}, #reg1#, #reg3#\n\n"
                     )
 
-        smali_code += "\tconst/16 #reg3#, {method_num:#x}\n\n".format(
-            method_num=num_of_methods
-        )
+        smali_code += f"\tconst/16 #reg3#, {num_of_methods:#x}\n\n"
 
         if is_virtual_method:
             smali_code += (
-                "\tinvoke-static {{#reg3#, {obj_instance}, #reg1#}}, "
-                "Lcom/apireflectionmanager/AdvancedApiReflection;->obfuscate("
-                "ILjava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;\n".format(
-                    obj_instance=invoke_registers[0]
-                )
+                f"\tinvoke-static {{#reg3#, {invoke_registers[0]}, #reg1#}},"
+                " Lcom/apireflectionmanager/AdvancedApiReflection;->obfuscate(ILjava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;\n"
             )
         else:
             smali_code += "\tconst/4 #reg4#, 0x0\n\n"
@@ -303,13 +281,13 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
         for index in range(0, 4):
             smali_code = smali_code.replace(
-                "#reg{0}#".format(index + 1), "v{0}".format(local_count + index)
+                f"#reg{index + 1}#", f"v{local_count + index}"
             )
 
         return smali_code
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             # There is a method limit for dex files.
@@ -333,11 +311,15 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     key=remaining_methods.__getitem__,
                     default=0,
                 )
-                helper_smali_files = multidex_smali_files[helper_dex_index] or smali_files
+                helper_smali_files = (
+                    multidex_smali_files[helper_dex_index] or smali_files
+                )
                 method_limits = [
-                    max(0, limit - helper_method_margin)
-                    if index == helper_dex_index
-                    else max(0, limit)
+                    (
+                        max(0, limit - helper_method_margin)
+                        if index == helper_dex_index
+                        else max(0, limit)
+                    )
                     for index, limit in enumerate(remaining_methods)
                 ]
                 dex_index_by_file = {
@@ -370,11 +352,9 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                     continue
 
                 self.logger.debug(
-                    'Obfuscating dangerous APIs using reflection in file "{0}"'.format(
-                        smali_file
-                    )
+                    "Obfuscating dangerous APIs using reflection in file"
+                    f' "{smali_file}"'
                 )
-
 
                 with open(smali_file, "r", encoding="utf-8") as current_file:
                     lines = current_file.readlines()
@@ -434,15 +414,10 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                             )
                             if invoke_match:
                                 method = (
-                                    "{class_name}->{method_name}"
-                                    "({method_param}){method_return}".format(
-                                        class_name=invoke_match.group("invoke_object"),
-                                        method_name=invoke_match.group("invoke_method"),
-                                        method_param=invoke_match.group("invoke_param"),
-                                        method_return=invoke_match.group(
-                                            "invoke_return"
-                                        ),
-                                    )
+                                    f"{invoke_match.group('invoke_object')}->"
+                                    f"{invoke_match.group('invoke_method')}("
+                                    f"{invoke_match.group('invoke_param')})"
+                                    f"{invoke_match.group('invoke_return')}"
                                 )
 
                                 # Use reflection only if this method belongs to
@@ -500,24 +475,15 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                         if tmp_return_type in self.primitive_types:
                                             new_move_result += (
                                                 "\tmove-result-object "
-                                                "{result_register}\n\n"
-                                                "\tcheck-cast {result_register}, "
-                                                "{result_class}\n\n".format(
-                                                    result_register=tmp_result_register,
-                                                    result_class=self.type_dict[
-                                                        tmp_return_type
-                                                    ],
-                                                )
+                                                f"{tmp_result_register}\n\n"
+                                                f"\tcheck-cast {tmp_result_register}, "
+                                                f"{self.type_dict[tmp_return_type]}\n\n"
                                             )
 
                                             new_move_result += (
-                                                "\tinvoke-virtual "
-                                                "{{{result_register}}}, {cast}\n\n".format(
-                                                    result_register=tmp_result_register,
-                                                    cast=self.reverse_cast_dict[
-                                                        tmp_return_type
-                                                    ],
-                                                )
+                                                "\tinvoke-virtual"
+                                                f" {{{tmp_result_register}}},"
+                                                f" {self.reverse_cast_dict[tmp_return_type]}\n\n"
                                             )
 
                                             if (
@@ -525,28 +491,21 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                                 or tmp_return_type == "D"
                                             ):
                                                 new_move_result += (
-                                                    "\tmove-result-wide "
-                                                    "{result_register}\n".format(
-                                                        result_register=tmp_result_register
-                                                    )
+                                                    "\tmove-result-wide"
+                                                    f" {tmp_result_register}\n"
                                                 )
                                             else:
                                                 new_move_result += (
-                                                    "\tmove-result "
-                                                    "{result_register}\n".format(
-                                                        result_register=tmp_result_register
-                                                    )
+                                                    "\tmove-result"
+                                                    f" {tmp_result_register}\n"
                                                 )
 
                                         else:
                                             new_move_result += (
                                                 "\tmove-result-object "
-                                                "{result_register}\n\n"
-                                                "\tcheck-cast {result_register}, "
-                                                "{return_type}\n".format(
-                                                    result_register=tmp_result_register,
-                                                    return_type=tmp_return_type,
-                                                )
+                                                f"{tmp_result_register}\n\n"
+                                                f"\tcheck-cast {tmp_result_register}, "
+                                                f"{tmp_return_type}\n"
                                             )
 
                                         lines[move_result_index] = new_move_result
@@ -557,35 +516,45 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                                     tmp_class_name, tmp_method, tmp_param
                                 )
 
-                                if self.obfuscator_instructions_length >= self.obfuscator_instructions_limit:
-                                    method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                                if (
+                                    self.obfuscator_instructions_length
+                                    >= self.obfuscator_instructions_limit
+                                ):
+                                    method_decl = (
+                                        "\n.method private static"
+                                        f" init{chunk_index}()V\n\t.locals 4\n\n"
+                                    )
                                     method_decl += current_chunk_code
                                     method_decl += "\n\treturn-void\n.end method\n\n"
 
                                     additional_methods_code += method_decl
-                                    clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/AdvancedApiReflection;->init{0}()V\n\n".format(chunk_index)
+                                    clinit_calls_code += (
+                                        "\tinvoke-static {},"
+                                        f" Lcom/apireflectionmanager/AdvancedApiReflection;->init{chunk_index}()V\n\n"
+                                    )
 
                                     self.obfuscator_instructions_length = 0
                                     current_chunk_code = ""
                                     chunk_index += 1
 
                                 # Change the original code with code using reflection.
-                                lines[
-                                    current_line_number
-                                ] = self.create_reflection_method(
-                                    self.methods_with_reflection,
-                                    method_local_count[method_number],
-                                    tmp_is_virtual,
-                                    tmp_register,
-                                    tmp_param,
+                                lines[current_line_number] = (
+                                    self.create_reflection_method(
+                                        self.methods_with_reflection,
+                                        method_local_count[method_number],
+                                        tmp_is_virtual,
+                                        tmp_register,
+                                        tmp_param,
+                                    )
                                 )
 
                                 self.methods_with_reflection += 1
                                 methods_added_by_dex[dex_index] += 1
 
                                 # Add the registers needed for performing reflection.
-                                lines[index + 1] = "\t.locals {0}\n".format(
-                                    method_local_count[method_number] + 4
+                                lines[index + 1] = (
+                                    "\t.locals"
+                                    f" {method_local_count[method_number] + 4}\n"
                                 )
 
                 with open(smali_file, "w", encoding="utf-8") as current_file:
@@ -599,12 +568,17 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                 destination_dir, "AdvancedApiReflection.smali"
             )
             if current_chunk_code:
-                method_decl = "\n.method private static init{0}()V\n\t.locals 4\n\n".format(chunk_index)
+                method_decl = (
+                    f"\n.method private static init{chunk_index}()V\n\t.locals 4\n\n"
+                )
                 method_decl += current_chunk_code
                 method_decl += "\n\treturn-void\n.end method\n\n"
 
                 additional_methods_code += method_decl
-                clinit_calls_code += "\tinvoke-static {{}}, Lcom/apireflectionmanager/AdvancedApiReflection;->init{0}()V\n\n".format(chunk_index)
+                clinit_calls_code += (
+                    "\tinvoke-static {},"
+                    f" Lcom/apireflectionmanager/AdvancedApiReflection;->init{chunk_index}()V\n\n"
+                )
 
             with open(destination_file, "w", encoding="utf-8") as api_reflection_smali:
                 reflection_code = util.get_advanced_api_reflection_smali_code().replace(
@@ -615,9 +589,7 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

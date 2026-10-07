@@ -16,9 +16,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class ClassRename(obfuscator_category.IRenameObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.subclass_name_pattern = re.compile(
@@ -56,7 +54,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         for old_name, new_name in rename_transformations.items():
             dot_rename_transformations[
                 old_name[1:-1].replace("/", ".").replace("$", ".")
-            ] = new_name[1:-1].replace("/", ".").replace("$", ".")
+            ] = (new_name[1:-1].replace("/", ".").replace("$", "."))
 
         return dot_rename_transformations
 
@@ -69,7 +67,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         manifest_xml_root.set("package", self.encrypted_package_name)
         manifest_xml_root.set(
             "{http://schemas.android.com/apk/res/android}sharedUserId",
-            "{0}.uid.shared".format(util.get_random_string(16)),
+            f"{util.get_random_string(16)}.uid.shared",
         )
 
     def get_class_ignore_prefixes(self) -> tuple:
@@ -80,11 +78,13 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
             if package_name.startswith("L"):
                 prefixes.append(package_name)
             else:
-                prefixes.append("L{0}".format(package_name))
+                prefixes.append(f"L{package_name}")
 
         return tuple(prefixes)
 
-    def get_class_names_to_ignore(self, obfuscation_info: Obfuscation, manifest_root: Element) -> Set[str]:
+    def get_class_names_to_ignore(
+        self, obfuscation_info: Obfuscation, manifest_root: Element
+    ) -> Set[str]:
 
         ignored_class_names = set()
 
@@ -104,11 +104,9 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 if value.startswith("."):
                     candidates.append(package_name + value)
                 elif "." not in value:
-                    candidates.append("{}.{}".format(package_name, value))
+                    candidates.append(f"{package_name}.{value}")
                 for candidate in candidates:
-                    smali_class_name = "L{};".format(
-                        candidate.replace(".", "/")
-                    )
+                    smali_class_name = f"L{candidate.replace('.', '/')};"
                     if smali_class_name in self.class_name_to_smali_file:
                         ignored_class_names.add(smali_class_name)
 
@@ -171,7 +169,6 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                             )
                         )
 
-
         def connect(first: str, second: str) -> None:
             if (
                 first != second
@@ -190,20 +187,28 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                             connect(class_name, referenced_class)
 
                     invocation = util.invoke_pattern.search(line)
-                    if invocation and (
-                        invocation.group("invoke_object"),
-                        invocation.group("invoke_method"),
-                        invocation.group("invoke_param"),
-                        invocation.group("invoke_return"),
-                    ) in restricted_methods:
+                    if (
+                        invocation
+                        and (
+                            invocation.group("invoke_object"),
+                            invocation.group("invoke_method"),
+                            invocation.group("invoke_param"),
+                            invocation.group("invoke_return"),
+                        )
+                        in restricted_methods
+                    ):
                         connect(class_name, invocation.group("invoke_object"))
 
                     field_usage = util.field_usage_pattern.search(line)
-                    if field_usage and (
-                        field_usage.group("field_object"),
-                        field_usage.group("field_name"),
-                        field_usage.group("field_type"),
-                    ) in restricted_fields:
+                    if (
+                        field_usage
+                        and (
+                            field_usage.group("field_object"),
+                            field_usage.group("field_name"),
+                            field_usage.group("field_type"),
+                        )
+                        in restricted_fields
+                    ):
                         connect(class_name, field_usage.group("field_object"))
 
         # Search connected classes in the graph
@@ -261,9 +266,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                                 separator_index += len(token)
                                 if token == "R":
                                     r_class = True
-                                is_package_token = (
-                                    class_name[separator_index] == "/"
-                                )
+                                is_package_token = class_name[separator_index] == "/"
                                 if token.isdigit():
                                     encrypted_class_name += (
                                         token + class_name[separator_index]
@@ -397,13 +400,13 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                     # without trailing ;
                     if (
                         string_match
-                        and "{0};".format(string_match.group("string_value"))
+                        and f"{string_match.group('string_value')};"
                         in rename_transformations
                     ):
                         line = line.replace(
                             string_match.group("string_value"),
                             rename_transformations[
-                                "{0};".format(string_match.group("string_value"))
+                                f"{string_match.group('string_value')};"
                             ][:-1],
                         )
 
@@ -435,14 +438,13 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
         if manifest_file:
             manifest_root = Xml.parse(manifest_file).getroot()
             android_name = "{http://schemas.android.com/apk/res/android}name"
-            package_prefix = "{0}.".format(self.package_name)
-            encrypted_package_prefix = "{0}.".format(self.encrypted_package_name)
+            package_prefix = f"{self.package_name}."
+            encrypted_package_prefix = f"{self.encrypted_package_name}."
             for alias in manifest_root.iter("activity-alias"):
                 alias_name = alias.get(android_name)
                 if alias_name and alias_name.startswith(package_prefix):
                     dot_rename_transformations[alias_name] = (
-                        encrypted_package_prefix
-                        + alias_name[len(package_prefix) :]
+                        encrypted_package_prefix + alias_name[len(package_prefix) :]
                     )
 
         # Activity names may omit the package name
@@ -476,21 +478,15 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 elif value in relative_rename_transformations:
                     value = relative_rename_transformations[value]
 
-                return "{quote}{value}{quote}".format(
-                    quote=match.group("quote"),
-                    value=value,
-                )
+                quote = match.group("quote")
+                return f"{quote}{value}{quote}"
 
             def replace_xml_tag(match):
                 tag = match.group("tag")
                 if tag in dot_rename_transformations:
                     tag = dot_rename_transformations[tag]
 
-                return "{prefix}{tag}{suffix}".format(
-                    prefix=match.group("prefix"),
-                    tag=tag,
-                    suffix=match.group("suffix"),
-                )
+                return f"{match.group('prefix')}{tag}{match.group('suffix')}"
 
             file_content = xml_value_pattern.sub(replace_xml_value, file_content)
             file_content = xml_tag_pattern.sub(replace_xml_tag, file_content)
@@ -529,9 +525,9 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 renamed_items = {
                     key: rename_json_value(item) for key, item in value.items()
                 }
-                return {
-                    key: item for key, (item, _) in renamed_items.items()
-                }, any(changed for _, changed in renamed_items.values())
+                return {key: item for key, (item, _) in renamed_items.items()}, any(
+                    changed for _, changed in renamed_items.values()
+                )
             return value, False
 
         json_files = []
@@ -600,10 +596,8 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
                 or renamed_service_file in destination_files
             ):
                 raise FileExistsError(
-                    'Unable to rename service descriptor "{0}" to "{1}": '
-                    "destination already exists".format(
-                        service_file, renamed_service_file
-                    )
+                    f'Unable to rename service descriptor "{service_file}" to'
+                    f' "{renamed_service_file}": destination already exists'
                 )
             destination_files.add(renamed_service_file)
             service_operations.append(
@@ -653,15 +647,15 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             for old_name, new_name in renamed_descriptors.items():
                 config_content = config_content.replace(
-                    "META-INF/services/{0}".format(old_name),
-                    "META-INF/services/{0}".format(new_name),
+                    f"META-INF/services/{old_name}",
+                    f"META-INF/services/{new_name}",
                 )
 
             with open(apktool_config, "w", encoding="utf-8") as current_file:
                 current_file.write(config_content)
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             smali_files = obfuscation_info.get_smali_files()
@@ -707,13 +701,15 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
             # Get class names to ignore
             self.ignore_package_names = obfuscation_info.get_ignore_package_names()
-            ignored_class_names = self.get_class_names_to_ignore(obfuscation_info, manifest_root)
-            self.ignore_package_names.extend(
-                ignored_class_names
+            ignored_class_names = self.get_class_names_to_ignore(
+                obfuscation_info, manifest_root
             )
+            self.ignore_package_names.extend(ignored_class_names)
 
             # Get package-sensitive dependencies which package name cannot be renamed
-            package_sensitive_dependencies = self.package_sensitive_dependencies(ignored_class_names)
+            package_sensitive_dependencies = self.package_sensitive_dependencies(
+                ignored_class_names
+            )
             self.package_preserved_class_names = (
                 package_sensitive_dependencies - ignored_class_names
             )
@@ -778,9 +774,7 @@ class ClassRename(obfuscator_category.IRenameObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

@@ -22,6 +22,7 @@ random.seed(random_seed)
 #                                Common regex patterns.                                #
 ########################################################################################
 
+
 def get_length_preserved_hash(identifier: str) -> str:
     if not identifier or len(identifier) <= 2:
         return identifier
@@ -116,8 +117,7 @@ invoke_pattern = re.compile(
 
 # <spaces> move-result[-object|-wide] <register>
 move_result_pattern = re.compile(
-    r"\s*move-result(?:-object|-wide)?\s+"
-    r"(?P<register>[vp]\d+)\s*(?:#.*)?$",
+    r"\s*move-result(?:-object|-wide)?\s+" r"(?P<register>[vp]\d+)\s*(?:#.*)?$",
     re.UNICODE,
 )
 
@@ -141,8 +141,7 @@ const_int_pattern = re.compile(
 
 # Create a java.lang.Class array using a size stored in another register.
 new_class_array_pattern = re.compile(
-    r"\s+new-array\s(?P<array>[vp]\d+),\s*(?P<size>[vp]\d+),\s*"
-    r"\[Ljava/lang/Class;"
+    r"\s+new-array\s(?P<array>[vp]\d+),\s*(?P<size>[vp]\d+),\s*" r"\[Ljava/lang/Class;"
 )
 
 # Store an object in an array using registers for the value, array and index.
@@ -167,7 +166,9 @@ smali_instruction_pattern = re.compile(
 fast_class_pattern = re.compile(r"\.class[^\n]*\s+(L[^;\s]+;)", re.UNICODE)
 
 # Matches string values in const-string or const-string/jumbo
-fast_const_string_pattern = re.compile(r'const-string(?:/jumbo)?\s+[vp0-9]+,\s*"(.*?)"', re.UNICODE)
+fast_const_string_pattern = re.compile(
+    r'const-string(?:/jumbo)?\s+[vp0-9]+,\s*"(.*?)"', re.UNICODE
+)
 
 # Matches method references, e.g. Lcom/example/MyClass;->myMethod(I)V
 fast_invoke_pattern = re.compile(r"L[^;\s]+;->[^\(\s]+\([^\)\s]*\)[^\s]+", re.UNICODE)
@@ -176,7 +177,9 @@ fast_invoke_pattern = re.compile(r"L[^;\s]+;->[^\(\s]+\([^\)\s]*\)[^\s]+", re.UN
 fast_field_usage_pattern = re.compile(r"L[^;\s]+;->[^:\s]+:[^\s]+", re.UNICODE)
 
 # Matches method declarations (extracting the signature), e.g. myMethod(I)V
-fast_method_pattern = re.compile(r"\.method[^\n]*\s+([^\s\()]+\([^\)]*\)[^\s]+)", re.UNICODE)
+fast_method_pattern = re.compile(
+    r"\.method[^\n]*\s+([^\s\()]+\([^\)]*\)[^\s]+)", re.UNICODE
+)
 
 # Matches field declarations (extracting the name and type), e.g. MY_FIELD:I
 fast_field_pattern = re.compile(r"\.field[^\n]*\s+([^:\s]+:[^\s=]+)", re.UNICODE)
@@ -195,8 +198,7 @@ def get_invoke_registers(invoke_pass: str) -> List[str]:
     if first[0] != last[0]:
         return []
     return [
-        "{0}{1}".format(first[0], number)
-        for number in range(int(first[1:]), int(last[1:]) + 1)
+        f"{first[0]}{number}" for number in range(int(first[1:]), int(last[1:]) + 1)
     ]
 
 
@@ -241,7 +243,9 @@ def show_list_progress(
             unit=unit,
             desc=description,
             mininterval=0.1,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+            bar_format=(
+                "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+            ),
         )
 
 
@@ -289,7 +293,7 @@ def inplace_edit_file(file_name: str):
     written data.
     """
 
-    backup_file_name = "{0}{1}{2}".format(file_name, os.extsep, "bak")
+    backup_file_name = f"{file_name}{os.extsep}bak"
 
     try:
         os.unlink(backup_file_name)
@@ -322,9 +326,7 @@ def inplace_edit_file(file_name: str):
             pass
         os.rename(backup_file_name, file_name)
 
-        logger.error(
-            'Error during inplace editing file "{0}": {1}'.format(file_name, e)
-        )
+        logger.error(f'Error during inplace editing file "{file_name}": {e}')
         raise
     finally:
         readable.close()
@@ -340,7 +342,7 @@ def get_text_from_file(file_name: str) -> str:
         with open(file_name, "r", encoding="utf-8") as file:
             return file.read()
     except Exception as e:
-        logger.error('Error during reading file "{0}": {1}'.format(file_name, e))
+        logger.error(f'Error during reading file "{file_name}": {e}')
         raise
 
 
@@ -350,7 +352,7 @@ def get_non_empty_lines_from_file(file_name: str) -> List[str]:
             # Return a list with the non blank lines contained in the file.
             return list(filter(None, (line.rstrip() for line in file)))
     except Exception as e:
-        logger.error('Error during reading file "{0}": {1}'.format(file_name, e))
+        logger.error(f'Error during reading file "{file_name}": {e}')
         raise
 
 

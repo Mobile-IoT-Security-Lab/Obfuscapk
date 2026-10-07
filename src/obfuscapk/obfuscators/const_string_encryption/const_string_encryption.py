@@ -17,9 +17,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
         self.is_adding_methods = True
 
@@ -49,7 +47,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
         return encrypted_string
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         self.encryption_secret = obfuscation_info.encryption_secret
         try:
@@ -68,9 +66,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 interactive=obfuscation_info.interactive,
                 description="Encrypting constant strings",
             ):
-                self.logger.debug(
-                    'Encrypting constant strings in file "{0}"'.format(smali_file)
-                )
+                self.logger.debug(f'Encrypting constant strings in file "{smali_file}"')
 
                 with open(smali_file, "r", encoding="utf-8") as current_file:
                     lines = current_file.readlines()
@@ -159,15 +155,14 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 # Const string encryption.
 
                 for string_number, index in enumerate(string_index):
+                    register = string_register[string_number]
+                    enc_string = self.encrypt_string(string_value[string_number])
                     lines[index] = (
-                        '\tconst-string/jumbo {register}, "{enc_string}"\n'
-                        "\n\tinvoke-static {{{register}}}, "
+                        f'\tconst-string/jumbo {register}, "{enc_string}"\n'
+                        f"\n\tinvoke-static {{{register}}}, "
                         "Lcom/decryptstringmanager/DecryptString"
                         ";->decryptString(Ljava/lang/String;)Ljava/lang/String;\n"
-                        "\n\tmove-result-object {register}\n".format(
-                            register=string_register[string_number],
-                            enc_string=self.encrypt_string(string_value[string_number]),
-                        )
+                        f"\n\tmove-result-object {register}\n"
                     )
 
                     encrypted_strings.add(string_value[string_number])
@@ -177,23 +172,16 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                 static_string_encryption_code = ""
                 for string_number, index in enumerate(static_string_index):
                     # Remove the original initialization.
-                    lines[index] = "{0}\n".format(lines[index].split(" = ")[0])
+                    lines[index] = f"{lines[index].split(' = ')[0]}\n"
 
                     # Initialize the static string from an encrypted string.
                     static_string_encryption_code += (
-                        '\tconst-string/jumbo v0, "{enc_string}"\n'
-                        "\n\tinvoke-static {{v0}}, "
-                        "Lcom/decryptstringmanager/DecryptString"
-                        ";->decryptString(Ljava/lang/String;)Ljava/lang/String;\n"
-                        "\n\tmove-result-object v0\n"
-                        "\n\tsput-object v0, {class_name}->"
-                        "{string_name}:Ljava/lang/String;\n\n".format(
-                            enc_string=self.encrypt_string(
-                                static_string_value[string_number]
-                            ),
-                            class_name=class_name,
-                            string_name=static_string_name[string_number],
-                        )
+                        "\tconst-string/jumbo v0,"
+                        f' "{self.encrypt_string(static_string_value[string_number])}"\n\n\tinvoke-static'
+                        " {v0},"
+                        " Lcom/decryptstringmanager/DecryptString;->decryptString(Ljava/lang/String;)Ljava/lang/String;\n\n\tmove-result-object"
+                        " v0\n\n\tsput-object v0,"
+                        f" {class_name}->{static_string_name[string_number]}:Ljava/lang/String;\n\n"
                     )
 
                     encrypted_strings.add(static_string_value[string_number])
@@ -211,12 +199,12 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                                 local_count = int(local_match.group("local_count"))
                                 directive = lines[i].strip().split()[0]
                                 if local_count == 0:
-                                    lines[i] = "\t{0} 1\n".format(directive)
+                                    lines[i] = f"\t{directive} 1\n"
 
                                 # Safely inject encryption code right after the locals/registers directive
-                                lines[i] = "{0}\n\n{1}".format(
-                                    lines[i].rstrip(),
-                                    static_string_encryption_code
+                                lines[i] = (
+                                    f"{lines[i].rstrip()}\n\n"
+                                    f"{static_string_encryption_code}"
                                 )
                                 break
                     else:
@@ -227,15 +215,10 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
                             new_constructor_line = len(lines) - 1
 
                         lines[new_constructor_line] = (
-                            "{original}"
-                            ".method static constructor <clinit>()V\n"
-                            "\t.locals 1\n\n"
-                            "{encryption_code}"
-                            "\treturn-void\n"
-                            ".end method\n\n".format(
-                                original=lines[new_constructor_line],
-                                encryption_code=static_string_encryption_code,
-                            )
+                            f"{lines[new_constructor_line]}.method static constructor"
+                            " <clinit>()V\n\t.locals"
+                            f" 1\n\n{static_string_encryption_code}\treturn-void\n.end"
+                            " method\n\n"
                         )
 
                 with open(smali_file, "w", encoding="utf-8") as current_file:
@@ -260,9 +243,7 @@ class ConstStringEncryption(obfuscator_category.IEncryptionObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

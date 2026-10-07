@@ -43,9 +43,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
     xml_on_click_pattern = re.compile(r"(?:android:)?onClick\s*=\s*[\"']([^\"']+)")
 
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.ignore_package_names = []
@@ -58,16 +56,14 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
         self.has_unknown_method_reflection = False
         self.xml_callback_mapping: Dict[str, str] = {}
 
-    def get_method_signature(
-        self, method_name: str, params: str, returns: str
-    ) -> str:
-        return "{0}({1}){2}".format(method_name, params, returns)
+    def get_method_signature(self, method_name: str, params: str, returns: str) -> str:
+        return f"{method_name}({params}){returns}"
 
     def get_method_key(
         self, class_name: str, method_name: str, params: str, returns: str
     ) -> str:
-        return "{0}->{1}".format(
-            class_name, self.get_method_signature(method_name, params, returns)
+        return (
+            f"{class_name}->{self.get_method_signature(method_name, params, returns)}"
         )
 
     def get_method_declaration(self, method_key: str) -> str:
@@ -77,7 +73,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
     def collect_method_data(
         self,
         smali_files: List[str],
-        all_smali_files:List[str],
+        all_smali_files: List[str],
         class_names_to_ignore: Optional[Set[str]] = None,
     ):
         """
@@ -131,9 +127,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     # get interfaces
                     interface_match = util.implements_pattern.search(line)
                     if interface_match:
-                        class_info.interfaces.add(
-                            interface_match.group("class_name")
-                        )
+                        class_info.interfaces.add(interface_match.group("class_name"))
                         continue
 
                     # get methods infos
@@ -180,13 +174,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                 self.classes[class_name].related_classes = related_classes
             remaining_classes.difference_update(related_classes)
 
-    def protect_reflected_method(
-        self, class_name: str, method_name: str, params: str
-    ):
+    def protect_reflected_method(self, class_name: str, method_name: str, params: str):
         """Resolve a reflection lookup to the full declared Smali method key."""
         pending_classes = [class_name]
         visited_classes = set()
-        signature_prefix = "{0}({1})".format(method_name, params)
+        signature_prefix = f"{method_name}({params})"
 
         while pending_classes:
             current_class = pending_classes.pop()
@@ -199,9 +191,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                 continue
             for signature in class_info.methods:
                 if signature.startswith(signature_prefix):
-                    self.reflected_method_keys.add(
-                        "{0}->{1}".format(current_class, signature)
-                    )
+                    self.reflected_method_keys.add(f"{current_class}->{signature}")
 
             if class_info.superclass:
                 pending_classes.append(class_info.superclass)
@@ -298,9 +288,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         # get the array of params
                         class_array = get_value(array_register, "class_array")
                         # get the value to put in the array
-                        class_value = get_value(
-                            array_put_match.group("value"), "class"
-                        )
+                        class_value = get_value(array_put_match.group("value"), "class")
                         index = get_value(array_put_match.group("index"), "int")
                         if (
                             class_array is not None
@@ -317,8 +305,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     invoke_match = util.invoke_pattern.search(line)
                     if invoke_match:
                         is_reflection = (
-                            invoke_match.group("invoke_object")
-                            == "Ljava/lang/Class;"
+                            invoke_match.group("invoke_object") == "Ljava/lang/Class;"
                             and invoke_match.group("invoke_method")
                             in self.reflection_methods
                         )
@@ -410,7 +397,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                 and " private " not in declaration
                 and " static " not in declaration
             ):
-                method_family.add("{0}->{1}".format(related_class, signature))
+                method_family.add(f"{related_class}->{signature}")
 
         return method_family
 
@@ -424,8 +411,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
             ):
                 return True
             if any(
-                interface not in self.classes
-                for interface in class_info.interfaces
+                interface not in self.classes for interface in class_info.interfaces
             ):
                 return True
         return False
@@ -443,16 +429,16 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
         declaration = self.get_method_declaration(method_key)
         return (
             method_name in self.xml_callback_mapping
-            and signature == "{0}(Landroid/view/View;)V".format(method_name)
+            and signature == f"{method_name}(Landroid/view/View;)V"
             and " public " in declaration
             and " static " not in declaration
         )
 
     def prepare_xml_callback_renaming(self):
         for method_name in list(self.xml_callback_mapping):
-            signature = "{0}(Landroid/view/View;)V".format(method_name)
+            signature = f"{method_name}(Landroid/view/View;)V"
             callback_methods = [
-                "{0}->{1}".format(class_name, signature)
+                f"{class_name}->{signature}"
                 for class_name, class_info in self.classes.items()
                 if signature in class_info.methods
             ]
@@ -522,9 +508,9 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
         params_and_return = signature[signature.index("(") :]
 
         while True:
-            new_name = "m{0}".format(self.method_counter)
+            new_name = f"m{self.method_counter}"
             self.method_counter += 1
-            new_signature = "{0}{1}".format(new_name, params_and_return)
+            new_signature = f"{new_name}{params_and_return}"
             if new_signature not in self.reserved_signatures:
                 self.reserved_signatures.add(new_signature)
                 return new_name
@@ -593,8 +579,8 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     new_name = self.method_mapping[method_key]
                     out_file.write(
                         line.replace(
-                            "{0}(".format(old_name),
-                            "{0}(".format(new_name),
+                            f"{old_name}(",
+                            f"{new_name}(",
                         )
                     )
                     renamed_methods.add(method_key)
@@ -649,11 +635,11 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                         if not mapping_key or mapping_key not in methods_to_rename:
                             return match.group(0)
 
-                        return "{0}->{1}({2}){3}".format(
-                            match.group("method_object"),
-                            self.method_mapping[mapping_key],
-                            match.group("method_param"),
-                            match.group("method_return"),
+                        return (
+                            f"{match.group('method_object')}->"
+                            f"{self.method_mapping[mapping_key]}("
+                            f"{match.group('method_param')})"
+                            f"{match.group('method_return')}"
                         )
 
                     out_file.write(
@@ -661,7 +647,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
                     )
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         self.ignore_package_names = obfuscation_info.get_ignore_package_names()
 
@@ -703,9 +689,7 @@ class MethodRename(obfuscator_category.IRenameObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

@@ -11,9 +11,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
     field_reflection_methods = {"getField", "getDeclaredField"}
 
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.ignore_package_names = []
@@ -36,7 +34,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
         return util.get_length_preserved_hash(field_name)
 
     def get_field_key(self, class_name: str, field_name: str, field_type: str) -> str:
-        return "{0}->{1}:{2}".format(class_name, field_name, field_type)
+        return f"{class_name}->{field_name}:{field_type}"
 
     def get_field_mapping_key(
         self, class_name: str, field_name: str, field_type: str
@@ -160,21 +158,18 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
                     # A label starts a new basic block
                     if stripped_line.startswith(":"):
-                        self.protect_and_clear(
-                            register_values, class_register_values
-                        )
+                        self.protect_and_clear(register_values, class_register_values)
                         continue
 
                     # Record string constants
                     string_match = util.const_string_pattern.search(line)
                     if string_match:
                         register = string_match.group("register")
-                        register_values[register] = (
-                            self.unescape_smali_string(string_match.group("string"))
+                        register_values[register] = self.unescape_smali_string(
+                            string_match.group("string")
                         )
                         class_register_values.pop(register, None)
                         continue
-
 
                     class_match = util.const_class_pattern.search(line)
                     if class_match:
@@ -201,8 +196,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     if invoke_match:
                         # Check if the invoke is a field reflection call
                         is_field_reflection = (
-                            invoke_match.group("invoke_object")
-                            == "Ljava/lang/Class;"
+                            invoke_match.group("invoke_object") == "Ljava/lang/Class;"
                             and invoke_match.group("invoke_method")
                             in self.field_reflection_methods
                             and invoke_match.group("invoke_param")
@@ -243,9 +237,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     if opcode.startswith(
                         ("if-", "goto", "packed-switch", "sparse-switch")
                     ):
-                        self.protect_and_clear(
-                            register_values, class_register_values
-                        )
+                        self.protect_and_clear(register_values, class_register_values)
                         continue
                     if opcode.startswith(("return", "throw")):
                         register_values.clear()
@@ -269,8 +261,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         register_values.pop(destination, None)
                         class_register_values.pop(destination, None)
                         if "wide" in opcode:
-                            next_register = "{0}{1}".format(
-                                destination[0], int(destination[1:]) + 1
+                            next_register = (
+                                f"{destination[0]}{int(destination[1:]) + 1}"
                             )
                             register_values.pop(next_register, None)
                             class_register_values.pop(next_register, None)
@@ -318,9 +310,9 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                     field_match = util.field_pattern.search(line)
 
                     # Ignore fields from ignored packages or native classes
-                    if (class_name and class_name.startswith(
-                            tuple(self.ignore_package_names)
-                        )
+                    if (
+                        class_name
+                        and class_name.startswith(tuple(self.ignore_package_names))
                     ) or class_name in self.native_classes:
                         ignore = True
 
@@ -331,7 +323,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         if (
                             not ignore
                             and "$" not in old_name  # Ignore compiler-generated fields
-                            and old_name not in self.protected_field_names  # Ignore protected fields
+                            and old_name
+                            not in self.protected_field_names  # Ignore protected fields
                             and (class_name, old_name) not in self.protected_fields
                             and class_name not in self.protected_field_classes
                         ):
@@ -341,8 +334,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
                             # Ignore fields that are already mapped
                             if mapping_key not in self.field_mapping:
-                                self.field_mapping[mapping_key] = "f{0}".format(
-                                    self.field_counter
+                                self.field_mapping[mapping_key] = (
+                                    f"f{self.field_counter}"
                                 )
                                 self.field_counter += 1
 
@@ -350,8 +343,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
                             # Rename the field
                             line = line.replace(
-                                "{0}:".format(old_name),
-                                "{0}:".format(new_name),
+                                f"{old_name}:",
+                                f"{new_name}:",
                             )
                             out_file.write(line)
 
@@ -393,8 +386,8 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                             new_name = self.field_mapping[mapping_key]
                             out_file.write(
                                 line.replace(
-                                    "{0}:".format(old_name),
-                                    "{0}:".format(new_name),
+                                    f"{old_name}:",
+                                    f"{new_name}:",
                                 )
                             )
                         else:
@@ -403,7 +396,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
                         out_file.write(line)
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         self.ignore_package_names = obfuscation_info.get_ignore_package_names()
 
@@ -437,9 +430,7 @@ class FieldRename(obfuscator_category.IRenameObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

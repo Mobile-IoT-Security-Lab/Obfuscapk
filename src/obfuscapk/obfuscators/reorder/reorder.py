@@ -21,9 +21,7 @@ class CodeBlock:
 
 class Reorder(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.if_mapping = {
@@ -42,7 +40,7 @@ class Reorder(obfuscator_category.ICodeObfuscator):
         }
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             op_codes = util.get_code_block_valid_op_codes()
@@ -57,7 +55,7 @@ class Reorder(obfuscator_category.ICodeObfuscator):
                 interactive=obfuscation_info.interactive,
                 description="Code reordering",
             ):
-                self.logger.debug('Reordering code in file "{0}"'.format(smali_file))
+                self.logger.debug(f'Reordering code in file "{smali_file}"')
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
                     editing_method = False
                     inside_try_catch = False
@@ -104,17 +102,11 @@ class Reorder(obfuscator_category.ICodeObfuscator):
                                 elif op_code in op_codes and not inside_try_catch:
                                     jump_name = util.get_random_string(16)
                                     out_file.write(
-                                        "\tgoto/32 :l_{label}_{count}\n\n".format(
-                                            label=jump_name, count=jump_count
-                                        )
+                                        f"\tgoto/32 :l_{jump_name}_{jump_count}\n\n"
                                     )
                                     out_file.write("\tnop\n\n")
                                     out_file.write("#!code_block!#\n")
-                                    out_file.write(
-                                        "\t:l_{label}_{count}\n".format(
-                                            label=jump_name, count=jump_count
-                                        )
-                                    )
+                                    out_file.write(f"\t:l_{jump_name}_{jump_count}\n")
                                     jump_count += 1
 
                                     new_if = self.if_mapping.get(op_code, None)
@@ -122,21 +114,14 @@ class Reorder(obfuscator_category.ICodeObfuscator):
                                         if_match = if_pattern.match(line)
                                         random_label_name = util.get_random_string(16)
                                         out_file.write(
-                                            "\t{if_cond} {register}, "
-                                            ":gl_{new_label}\n\n".format(
-                                                if_cond=new_if,
-                                                register=if_match.group("register"),
-                                                new_label=random_label_name,
-                                            )
+                                            f"\t{new_if} {if_match.group('register')},"
+                                            f" :gl_{random_label_name}\n\n"
                                         )
                                         out_file.write(
-                                            "\tgoto/32 :{0}\n\n".format(
-                                                if_match.group("goto_label")
-                                            )
+                                            "\tgoto/32"
+                                            f" :{if_match.group('goto_label')}\n\n"
                                         )
-                                        out_file.write(
-                                            "\t:gl_{0}".format(random_label_name)
-                                        )
+                                        out_file.write(f"\t:gl_{random_label_name}")
                                     else:
                                         out_file.write(line)
                                 else:
@@ -193,9 +178,7 @@ class Reorder(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

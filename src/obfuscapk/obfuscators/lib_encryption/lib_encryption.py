@@ -14,9 +14,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class LibEncryption(obfuscator_category.IEncryptionObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
         self.is_adding_methods = True
         self.encryption_secret = "This-key-need-to-be-32-character"
@@ -35,7 +33,7 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
         return None
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
         self.encryption_secret = obfuscation_info.encryption_secret
         try:
             files_by_name = {}
@@ -99,9 +97,8 @@ class LibEncryption(obfuscator_category.IEncryptionObfuscator):
                     obfuscation_info.decrypt_asset_smali_file_added_flag = True
         except Exception as error:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, error
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator:'
+                f" {error}"
             )
             raise
         finally:

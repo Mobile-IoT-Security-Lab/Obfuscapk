@@ -11,9 +11,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class MethodOverload(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.is_adding_methods = True
@@ -48,9 +46,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                         if (
                             class_name in class_names_to_ignore
                             or class_name.startswith(
-                                tuple(
-                                    "L{0}".format(p) for p in self.ignore_package_names
-                                )
+                                tuple(f"L{p}" for p in self.ignore_package_names)
                             )
                         ):
                             # The methods of this class should be ignored when
@@ -90,13 +86,11 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
                         new_param = "".join(params)
                         # Update parameter list and add void return type.
                         overloaded_signature = line.replace(
-                            "({0}){1}".format(
-                                method_match.group("method_param"),
-                                method_match.group("method_return"),
+                            (
+                                f"({method_match.group('method_param')})"
+                                f"{method_match.group('method_return')}"
                             ),
-                            "({0}{1})V".format(
-                                method_match.group("method_param"), new_param
-                            ),
+                            f"({method_match.group('method_param')}{new_param})V",
                         )
                         out_file.write(overloaded_signature)
                         out_file.write(overloaded_method_body)
@@ -124,9 +118,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
             interactive=interactive,
             description="Inserting method overloads in smali files",
         ):
-            self.logger.debug(
-                'Inserting method overloads in file "{0}"'.format(smali_file)
-            )
+            self.logger.debug(f'Inserting method overloads in file "{smali_file}"')
             if added_methods < max_methods_to_add:
                 added_methods += self.add_method_overloads_to_file(
                     smali_file,
@@ -137,10 +129,10 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
             else:
                 break
 
-        self.logger.debug("{0} new overloaded methods were added".format(added_methods))
+        self.logger.debug(f"{added_methods} new overloaded methods were added")
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             # NOTE: only direct methods (methods that are by nature non-overridable,
@@ -183,9 +175,7 @@ class MethodOverload(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

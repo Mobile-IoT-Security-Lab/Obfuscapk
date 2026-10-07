@@ -12,9 +12,7 @@ import zipfile
 
 class BundleDecompiler(object):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         self.baksmali = os.environ.get("BAKSMALI_PATH", "/opt/smali/baksmali.jar")
         self.smali = os.environ.get("SMALI_PATH", "/opt/smali/smali.jar")
@@ -25,8 +23,8 @@ class BundleDecompiler(object):
         self, aab_path: str, output_dir_path: str = None, force: bool = False
     ) -> str:
         if not os.path.isfile(aab_path):
-            self.logger.error('Unable to find file "{0}"'.format(aab_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(aab_path))
+            self.logger.error(f'Unable to find file "{aab_path}"')
+            raise FileNotFoundError(f'Unable to find file "{aab_path}"')
 
         if not output_dir_path:
             output_dir_path = os.path.join(
@@ -34,9 +32,9 @@ class BundleDecompiler(object):
                 os.path.splitext(os.path.basename(aab_path))[0],
             )
             self.logger.debug(
-                "No output directory provided, the result will be saved in the "
-                "same directory as the input file, in a directory with the same "
-                'name as the input file: "{0}"'.format(output_dir_path)
+                "No output directory provided, the result will be saved in the same"
+                " directory as the input file, in a directory with the same name as"
+                f' the input file: "{output_dir_path}"'
             )
 
         if os.path.isdir(output_dir_path):
@@ -44,12 +42,12 @@ class BundleDecompiler(object):
                 shutil.rmtree(output_dir_path)
             else:
                 self.logger.error(
-                    'Output directory "{0}" already exists, use the "force" flag '
-                    "to overwrite".format(output_dir_path)
+                    f'Output directory "{output_dir_path}" already exists, use the'
+                    ' "force" flag to overwrite'
                 )
                 raise FileExistsError(
-                    'Output directory "{0}" already exists, use the "force" flag '
-                    "to overwrite".format(output_dir_path)
+                    f'Output directory "{output_dir_path}" already exists, use the'
+                    ' "force" flag to overwrite'
                 )
 
         self.logger.info(f"Extracting AAB directly to {output_dir_path}...")
@@ -190,11 +188,9 @@ class BundleDecompiler(object):
 
         # Check if the input directory exists.
         if not os.path.isdir(source_dir_path):
-            self.logger.error(
-                'Unable to find source directory "{0}"'.format(source_dir_path)
-            )
+            self.logger.error(f'Unable to find source directory "{source_dir_path}"')
             raise NotADirectoryError(
-                'Unable to find source directory "{0}"'.format(source_dir_path)
+                f'Unable to find source directory "{source_dir_path}"'
             )
 
         # If no output aab path is specified, the new aab will be saved in the
@@ -206,8 +202,8 @@ class BundleDecompiler(object):
                 f"{os.path.basename(source_dir_path)}.aab",
             )
             self.logger.debug(
-                "No output aab path provided, the new aab will be saved in the "
-                'default path: "{0}"'.format(output_aab_path)
+                "No output aab path provided, the new aab will be saved in the default"
+                f' path: "{output_aab_path}"'
             )
 
         os.makedirs(os.path.dirname(output_aab_path), exist_ok=True)
@@ -355,9 +351,7 @@ class BundleDecompiler(object):
 
 class AABSigner(object):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.jarsigner = shutil.which("jarsigner") or "jarsigner"
 
     def sign(
@@ -395,6 +389,7 @@ class AABSigner(object):
             return output.decode(errors="replace")
         except subprocess.CalledProcessError as e:
             self.logger.error(
-                f"Error during sign command: {e.output.decode(errors='replace') if e.output else e}"
+                "Error during sign command:"
+                f" {e.output.decode(errors='replace') if e.output else e}"
             )
             raise

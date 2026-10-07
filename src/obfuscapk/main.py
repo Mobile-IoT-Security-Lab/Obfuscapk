@@ -96,10 +96,8 @@ def perform_obfuscation(
     check_external_tool_dependencies()
 
     if not os.path.isfile(input_apk_path):
-        logger.critical('Unable to find application file "{0}"'.format(input_apk_path))
-        raise FileNotFoundError(
-            'Unable to find application file "{0}"'.format(input_apk_path)
-        )
+        logger.critical(f'Unable to find application file "{input_apk_path}"')
+        raise FileNotFoundError(f'Unable to find application file "{input_apk_path}"')
 
     obfuscation = Obfuscation(
         input_apk_path,
@@ -128,9 +126,7 @@ def perform_obfuscation(
     for obfuscator_name in obfuscator_list:
         # Make sure all the provided obfuscator names are valid.
         if obfuscator_name not in valid_obfuscators:
-            raise ValueError(
-                'There is no obfuscator named "{0}"'.format(obfuscator_name)
-            )
+            raise ValueError(f'There is no obfuscator named "{obfuscator_name}"')
         if obfuscator_name_to_obfuscator_object[obfuscator_name].is_adding_fields:
             obfuscation.obfuscators_adding_fields += 1
         if obfuscator_name_to_obfuscator_object[obfuscator_name].is_adding_methods:
@@ -147,11 +143,11 @@ def perform_obfuscation(
         try:
             if interactive:
                 obfuscator_progress.set_description(
-                    "Running obfuscators ({0})".format(obfuscator_name)
+                    f"Running obfuscators ({obfuscator_name})"
                 )
             (obfuscator_name_to_function[obfuscator_name])(obfuscation)
         except Exception as e:
-            logger.critical("Error during obfuscation: {0}".format(e), exc_info=True)
+            logger.critical(f"Error during obfuscation: {e}", exc_info=True)
             raise
 
     if obfuscation.obfuscated_apk_path and os.path.isfile(
@@ -165,16 +161,14 @@ def perform_obfuscation(
 
             new_final_path = os.path.join(output_dir, os.path.basename(final_apk_path))
             logger.warning(
-                "Moving final APK to requested output directory: {0}".format(
-                    new_final_path
-                )
+                f"Moving final APK to requested output directory: {new_final_path}"
             )
             import shutil
 
             shutil.move(final_apk_path, new_final_path)
             final_apk_path = new_final_path
 
-        logger.warning("Obfuscated APK is available at: {0}".format(final_apk_path))
+        logger.warning(f"Obfuscated APK is available at: {final_apk_path}")
 
     if (
         cleanup
@@ -182,9 +176,8 @@ def perform_obfuscation(
         and os.path.isdir(obfuscation.working_dir_path)
     ):
         logger.info(
-            "Cleaning up intermediate working directory: {0}".format(
-                obfuscation.working_dir_path
-            )
+            "Cleaning up intermediate working directory:"
+            f" {obfuscation.working_dir_path}"
         )
         import shutil
 

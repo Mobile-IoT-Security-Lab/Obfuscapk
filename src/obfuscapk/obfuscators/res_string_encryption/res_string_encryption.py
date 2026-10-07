@@ -18,9 +18,7 @@ from obfuscapk.obfuscation import Obfuscation
 
 class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
         self.is_adding_methods = True
 
@@ -130,7 +128,7 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
         return None
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         self.encryption_secret = obfuscation_info.encryption_secret
         try:
@@ -223,10 +221,9 @@ class ResStringEncryption(obfuscator_category.IEncryptionObfuscator):
                             )
                             # A single-register range also handles high parameter registers.
                             lines[result_index] += (
-                                f"\n\tinvoke-static/range {{{register} .. {register}}}, "
-                                "Lcom/decryptstringmanager/DecryptString;->"
-                                f"{decrypt_method}({value_type}){value_type}\n\n"
-                                f"\tmove-result-object {register}\n"
+                                f"\n\tinvoke-static/range {{{register} .. {register}}},"
+                                f" Lcom/decryptstringmanager/DecryptString;->{decrypt_method}({value_type}){value_type}\n\n\tmove-result-object"
+                                f" {register}\n"
                             )
                             encrypted_names[kind].add(name)
                         break

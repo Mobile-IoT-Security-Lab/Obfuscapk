@@ -16,9 +16,7 @@ class Nop(obfuscator_category.ICodeObfuscator):
     }
 
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
     def _extract_op_code(self, line: str):
@@ -46,7 +44,7 @@ class Nop(obfuscator_category.ICodeObfuscator):
         return True
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             op_codes = util.get_nop_valid_op_codes()
@@ -57,7 +55,7 @@ class Nop(obfuscator_category.ICodeObfuscator):
                 description='Inserting "nop" instructions in smali files',
             ):
                 self.logger.debug(
-                    'Inserting "nop" instructions in file "{0}"'.format(smali_file)
+                    f'Inserting "nop" instructions in file "{smali_file}"'
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
                     lines = in_file.readlines()
@@ -82,9 +80,7 @@ class Nop(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

@@ -15,9 +15,7 @@ from obfuscapk.util import sha256sum
 
 class VirusTotal(obfuscator_category.IOtherObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
         self.vt_session = None
 
@@ -33,7 +31,7 @@ class VirusTotal(obfuscator_category.IOtherObfuscator):
             return None
 
     def scan_apk_file(self, apk_file_path: str) -> dict:
-        self.logger.info('Scanning file "{0}"'.format(apk_file_path))
+        self.logger.info(f'Scanning file "{apk_file_path}"')
         sha256_hash = sha256sum(apk_file_path)
         report = self.get_report_or_none(sha256_hash)
         if report is not None:
@@ -46,9 +44,7 @@ class VirusTotal(obfuscator_category.IOtherObfuscator):
 
         report = self.get_report_or_none(sha256_hash)
         if report is None:
-            raise Exception(
-                'Error while retrieving scan for file "{0}"'.format(apk_file_path)
-            )
+            raise Exception(f'Error while retrieving scan for file "{apk_file_path}"')
         return report
 
     def obfuscate(self, obfuscation_info: Obfuscation):
@@ -71,32 +67,29 @@ class VirusTotal(obfuscator_category.IOtherObfuscator):
 
             original_report = self.scan_apk_file(obfuscation_info.apk_path)
             self.logger.info(
-                "Original apk scan result ({0} positives): {1}".format(
-                    self.get_positives(original_report), pformat(original_report)
-                )
+                f"Original apk scan result ({self.get_positives(original_report)}"
+                f" positives): {pformat(original_report)}"
             )
             obfuscated_report = self.scan_apk_file(obfuscation_info.obfuscated_apk_path)
             self.logger.info(
-                "Obfuscated apk scan result ({0} positives): {1}".format(
-                    self.get_positives(obfuscated_report),
-                    pformat(obfuscated_report),
-                )
+                f"Obfuscated apk scan result ({self.get_positives(obfuscated_report)}"
+                f" positives): {pformat(obfuscated_report)}"
             )
 
             # Save Virus Total results in 2 json file (original and obfuscated) in
             # the same directory as the obfuscated apk.
             original_report_path = os.path.join(
                 os.path.dirname(obfuscation_info.obfuscated_apk_path),
-                "{0}.virustotal-original.json".format(
-                    os.path.splitext(os.path.basename(obfuscation_info.apk_path))[0]
+                (
+                    f"{os.path.splitext(os.path.basename(obfuscation_info.apk_path))[0]}"
+                    f".virustotal-original.json"
                 ),
             )
             obfuscated_report_path = os.path.join(
                 os.path.dirname(obfuscation_info.obfuscated_apk_path),
-                "{0}.virustotal-obfuscated.json".format(
-                    os.path.splitext(
-                        os.path.basename(obfuscation_info.obfuscated_apk_path)
-                    )[0]
+                (
+                    f"{os.path.splitext(os.path.basename(obfuscation_info.obfuscated_apk_path))[0]}"
+                    f".virustotal-obfuscated.json"
                 ),
             )
             with open(original_report_path, "w") as original_json, open(
@@ -121,7 +114,7 @@ class VirusTotal(obfuscator_category.IOtherObfuscator):
                 )
 
         except Exception as e:
-            self.logger.error("Error during Virus Total analysis: {0}".format(e))
+            self.logger.error(f"Error during Virus Total analysis: {e}")
             raise
 
         finally:
