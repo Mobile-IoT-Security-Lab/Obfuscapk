@@ -28,6 +28,7 @@ class Goto(obfuscator_category.ICodeObfuscator):
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
                     editing_method = False
+                    inserted_entry_jump = False
                     for line in in_file:
                         if (
                             line.startswith(".method ")
@@ -41,11 +42,13 @@ class Goto(obfuscator_category.ICodeObfuscator):
                             # instruction of the method.
                             out_file.write(line)
                             editing_method = True
+                            inserted_entry_jump = False
 
                         elif editing_method and util.locals_pattern.search(line):
                             out_file.write(line)
                             out_file.write("\n\tgoto/32 :after_last_instruction\n\n")
                             out_file.write("\t:before_first_instruction\n")
+                            inserted_entry_jump = True
 
                         elif line.startswith(".end method") and editing_method:
                             # If at the end of the method, insert a label after the
@@ -54,10 +57,13 @@ class Goto(obfuscator_category.ICodeObfuscator):
                             # endless loop because the method will return at some point
                             # and the second "goto" won't be called again when the
                             # method finishes.
-                            out_file.write("\n\t:after_last_instruction\n\n")
-                            out_file.write("\tgoto/32 :before_first_instruction\n\n")
+                            # Only close a wrapper whose opening jump and label exist.
+                            if inserted_entry_jump:
+                                out_file.write("\n\t:after_last_instruction\n\n")
+                                out_file.write("\tgoto/32 :before_first_instruction\n\n")
                             out_file.write(line)
                             editing_method = False
+                            inserted_entry_jump = False
 
                         else:
                             out_file.write(line)
