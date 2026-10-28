@@ -264,7 +264,9 @@ class AdvancedReflection(obfuscator_category.ICodeObfuscator):
                         f" {param_and_register[1][0]}, #reg1#, #reg3#\n\n"
                     )
 
-        smali_code += f"\tconst/16 #reg3#, {num_of_methods:#x}\n\n"
+        # The registry index can exceed the signed 16-bit range in large APKs.
+        index_opcode = "const/16" if num_of_methods <= 0x7FFF else "const"
+        smali_code += f"\t{index_opcode} #reg3#, {num_of_methods:#x}\n\n"
 
         if is_virtual_method:
             smali_code += (

@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /opt/apktool && \
     wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/v${APKTOOL_VERSION}/scripts/linux/apktool -O /opt/apktool/apktool && \
     wget -q https://github.com/iBotPeaches/Apktool/releases/download/v${APKTOOL_VERSION}/apktool_${APKTOOL_VERSION}.jar -O /opt/apktool/apktool.jar && \
+    sed -i 's/-Xmx1024M/-Xmx4g/' /opt/apktool/apktool && \
     chmod +x /opt/apktool/apktool /opt/apktool/apktool.jar && \
     ln -s /opt/apktool/apktool /usr/local/bin/apktool
 

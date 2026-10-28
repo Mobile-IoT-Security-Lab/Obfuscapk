@@ -6,7 +6,7 @@
 
 > A black-box obfuscation tool for Android applications.
 
-[![Python](https://img.shields.io/badge/Python-3.7%2B-green.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-APK%20%7C%20AAB-brightgreen.svg?logo=android&logoColor=white)](https://developer.android.com/)
 
@@ -28,14 +28,16 @@ Do not use Obfuscapk to hide malware, bypass security products, evade app-store 
 - Configurable obfuscator order through command line options.
 - Support for APK files and experimental support for Android App Bundles (`.aab`).
 - Docker and Docker Compose environment for reproducible execution.
-- Custom signing support through user-provided keystores.
+- Custom signing support for APK and AAB files through user-provided keystores.
+- Method renaming mappings for inspecting the changes applied to an application.
+- Automatic multidex repartitioning when selected obfuscators add methods or fields.
 
 ## Supported inputs
 
 | Format | Status | Notes |
 | --- | --- | --- |
 | `.apk` | Supported | Main target format. |
-| `.aab` | Experimental | Requires `BundleDecompiler.jar`; not supported on Windows by BundleDecompiler at the time of writing. |
+| `.aab` | Experimental | Processes the base module with apktool, aapt2, smali and baksmali. Requires `jarsigner` for signing. |
 
 A successful obfuscation process means that Obfuscapk completed the transformation and produced an output package. It does not guarantee that the transformed application behaves exactly like the original one. Some applications use anti-tampering, integrity checks, dynamic loading, native code, resource assumptions or framework-specific patterns that can make repackaging and obfuscation fail.
 
@@ -70,7 +72,11 @@ Please cite Obfuscapk as follows:
 
 Obfuscapk is designed around a plugin system. Each obfuscation technique is implemented as a plugin that inherits from the base obfuscator class and implements the `obfuscate` method.
 
+Plugins are discovered from `.obfuscator` metadata files with Python's standard library. Yapsy is no longer required.
+
 During execution, Obfuscapk creates an obfuscation object that stores the paths, intermediate state, configuration and metadata needed by the active plugins. The object is passed to each selected obfuscator in sequence. The list and order of active obfuscators are specified through command line options.
+
+When selected obfuscators add methods or fields, the smali files are repartitioned before rebuilding. The partitioning counts unique method and field declarations and references, and constant strings, with a target of 10,000 entries per category in each DEX partition. This reduces DEX limit failures but does not guarantee that every application can be rebuilt.
 
 To add a new obfuscator:
 
@@ -152,25 +158,33 @@ docker run --rm -it \
   original.apk
 ```
 
+The Docker image includes Python 3.14.5, OpenJDK 25, apktool 3.0.2 and smali/baksmali 3.0.9. The root `Dockerfile` is used for both Docker and Docker Compose.
+
 A legacy Docker Hub image may still exist under the original namespace. For this maintained fork, prefer building the Docker image from the current repository unless a new official image is explicitly published by the maintainers.
 
+Apktool uses a maximum Java heap of 4 GiB by default in the Docker image and the
+bundled `bin/apktool` launcher. Memory is allocated as needed. Rebuild existing
+Docker images to apply this setting; the container must have enough memory for
+the Java heap and the other running processes.
+
 ### From source
+
+Use Python 3.10 or later. The test workflows cover Python 3.10 through 3.14 on Linux, macOS and Windows.
 
 Install the external tools required by Obfuscapk and make sure they are available from the command line:
 
 - [`apktool`](https://ibotpeaches.github.io/Apktool/)
 - [`apksigner`](https://developer.android.com/studio/command-line/apksigner)
 - [`zipalign`](https://developer.android.com/studio/command-line/zipalign)
-- Java runtime
-- optionally, [`BundleDecompiler`](https://github.com/TamilanPeriyasamy/BundleDecompiler) for AAB support
+- Java runtime compatible with the selected Android tools
+- for AAB support, `aapt2`, the smali and baksmali JAR files, and a JDK providing `jarsigner`
 
-`zipalign` and `apksigner` are included in the Android SDK Build Tools.
+`zipalign`, `apksigner` and `aapt2` are included in the Android SDK Build Tools. The Docker image provides the dependencies for both APK and AAB processing.
 
 The location of the external tools can be customized with environment variables:
 
 ```bash
 export APKTOOL_PATH=/custom/path/apktool
-export BUNDLE_DECOMPILER_PATH=/custom/path/BundleDecompiler.jar
 export APKSIGNER_PATH=/custom/path/apksigner
 export ZIPALIGN_PATH=/custom/path/zipalign
 ```
@@ -193,19 +207,33 @@ When running from source, execute Obfuscapk from the `src/` directory or add `Ob
 
 ## Android App Bundle support
 
-Obfuscapk includes experimental support for Android App Bundles (`.aab`) by using `BundleDecompiler.jar`.
+Obfuscapk includes experimental support for Android App Bundles (`.aab`) through an internal pipeline. The external `BundleDecompiler.jar` and the `BUNDLE_DECOMPILER_PATH` setting are no longer used.
 
-To enable AAB support in a source installation:
+The pipeline extracts the bundle, disassembles the base module's DEX files with baksmali, and uses aapt2 and apktool to convert the manifest and resources into a form that the plugins can modify. During rebuilding, smali assembles the modified code and the manifest and resources are converted back to protobuf format. Other bundle modules are retained, but their code is not processed by this pipeline.
 
-1. Download the latest available `BundleDecompiler.jar` from the BundleDecompiler project.
-2. Save it in a directory included in `PATH`, for example `/usr/local/bin`.
-3. Ensure it is executable.
-4. Alternatively, set `BUNDLE_DECOMPILER_PATH` to its location.
+For a source installation, configure the additional tools:
+
+```bash
+export BAKSMALI_PATH=/custom/path/baksmali.jar
+export SMALI_PATH=/custom/path/smali.jar
+export AAPT2_PATH=/custom/path/aapt2
+```
+
+By default, the JAR files are expected at `/opt/smali/baksmali.jar` and `/opt/smali/smali.jar`, and `aapt2` is resolved from `PATH`. Java and `jarsigner` must also be available from the command line. The current pipeline assembles and disassembles DEX files with API level 30.
+
+AAB files are signed with `jarsigner`; APK files are signed with `apksigner`. `NewAlignment` is skipped for AAB files. Both formats support the bundled test keystore and custom keystores.
 
 Example:
 
 ```bash
-export BUNDLE_DECOMPILER_PATH=/usr/local/bin/BundleDecompiler.jar
+docker compose run --rm obfuscapk \
+  -o DebugRemoval \
+  -o ConstStringEncryption \
+  -o Rebuild \
+  -o NewSignature \
+  --cleanup \
+  --output-dir /output \
+  original.aab
 ```
 
 AAB support should be considered experimental. Validate the output package carefully, especially when working with modern Android projects, split configurations, dynamic features or non-standard build pipelines.
@@ -284,7 +312,7 @@ obfuscapk \
   original.apk
 ```
 
-Always keep `Rebuild`, `NewAlignment` and `NewSignature` after the transformation obfuscators. They are not obfuscation techniques by themselves, but they are needed to build, align and sign the output package.
+Always keep `Rebuild`, `NewAlignment` and `NewSignature` after the transformation obfuscators. They are not obfuscation techniques by themselves, but they are needed to build, align and sign the output APK. For AAB files, use `Rebuild` and `NewSignature`; alignment is skipped.
 
 ### Options
 
@@ -292,18 +320,20 @@ Always keep `Rebuild`, `NewAlignment` and `NewSignature` after the transformatio
 | --- | --- |
 | `-o`, `--obfuscator OBFUSCATOR` | Select an obfuscator. Can be specified multiple times. Order matters. |
 | `-w`, `--working-dir DIR` | Directory for intermediate files. Created automatically if missing. |
-| `-d`, `--destination OUT_APK_OR_AAB` | Explicit output file path. Existing files can be overwritten. |
+| `-d`, `--destination OUT_APK_OR_AAB` | Output file path before the final move to `--output-dir`. Existing files can be overwritten. |
 | `-i`, `--ignore-libs` | Skip known third-party libraries during obfuscation. |
-| `-p`, `--show-progress` | Show progress bars during obfuscation. |
+| `-p`, `--show-progress` | Show progress bars during obfuscation. Enabled automatically when standard output is a terminal. |
 | `--ignore-packages-file FILE` | File containing package names to ignore, one package per line. |
-| `--use-aapt2` | Use `aapt2` when rebuilding with apktool. |
+| `--use-aapt2` | Accepted for compatibility. Rebuilding uses apktool's default resource compiler; this option is not passed to apktool. |
 | `--cleanup` | Remove the intermediate working directory after a successful run. |
-| `--output-dir DIR` | Move the final output package to the selected directory. Defaults to `/output` in the Docker workflow. |
-| `--keystore-file FILE` | Custom keystore for signing the output APK. |
+| `--output-dir DIR` | Move the final output package to the selected directory. Defaults to `/output` for all installation methods. |
+| `--keystore-file FILE` | Custom keystore for signing the output APK or AAB. |
 | `--keystore-password PASSWORD` | Password for the custom keystore. |
 | `--key-alias ALIAS` | Alias of the key inside the custom keystore. |
 | `--key-password PASSWORD` | Password of the selected key, if different from the keystore password. |
 | `-k`, `--virus-total-key VT_API_KEY` | API key used only by the `VirusTotal` plugin. |
+
+For source installations, set `--output-dir` to a writable directory. The output package is moved there after the selected plugins finish, including when `--destination` is provided. `--cleanup` removes the intermediate working directory after a successful run.
 
 When no custom keystore is provided, Obfuscapk uses the test keystore bundled with the project. Use a custom keystore when the signature matters for your experiment or test workflow.
 
@@ -340,19 +370,19 @@ The obfuscators bundled with Obfuscapk are grouped into categories:
 | `ClassRename` | Rename | Changes package names and renames classes, including manifest references. |
 | `ConstStringEncryption` | Encryption | Encrypts constant strings in code. |
 | `DebugRemoval` | Code | Removes debug information from smali code. |
-| `FieldRename` | Rename | Renames fields. |
+| `FieldRename` | Rename | Renames fields and updates inherited references while preserving selected runtime and reflection names. |
 | `Goto` | Code | Adds `goto` instructions to modify the control-flow graph. |
 | `LibEncryption` | Encryption | Encrypts native libraries when compatible with the loading pattern. |
 | `MethodOverload` | Code | Adds overloaded methods with additional random arguments and junk instructions. |
-| `MethodRename` | Rename | Renames methods. |
+| `MethodRename` | Rename | Renames suitable methods consistently across class hierarchies and exports a JSON mapping. |
 | `NewAlignment` | Trivial | Aligns the output package with `zipalign`. |
 | `NewSignature` | Trivial | Signs the output package. |
 | `Nop` | Code | Inserts random `nop` instructions. |
-| `RandomManifest` | Resources | Randomly reorders entries in the Android manifest without breaking XML structure. |
+| `RandomManifest` | Resources | Randomly reorders manifest entries while keeping activity aliases after their target activities. |
 | `Rebuild` | Trivial | Rebuilds the application package. |
 | `Reflection` | Code | Redirects suitable app method invocations through Java reflection. |
 | `Reorder` | Code | Reorders basic blocks and adjusts branches using `goto` instructions. |
-| `ResStringEncryption` | Encryption | Encrypts strings in resources that are referenced from code. |
+| `ResStringEncryption` | Encryption | Encrypts selected string and string-array resources referenced from supported code patterns, including localized values. |
 | `VirusTotal` | Other | Submits selected artifacts to VirusTotal. Requires an API key. Do not use it with confidential applications unless you are authorized to upload them. |
 
 Not every plugin is a pure obfuscation technique. `Rebuild`, `NewAlignment`, `NewSignature` and `VirusTotal` are implemented as plugins to keep the pipeline modular.
@@ -392,7 +422,9 @@ LOG_LEVEL=DEBUG docker compose run --rm obfuscapk -o Rebuild -o NewAlignment -o 
 - Old `apktool` versions.
 - Missing `apksigner` or `zipalign`.
 - Missing or incompatible Java runtime.
-- AAB processing without `BundleDecompiler.jar`.
+- AAB processing without aapt2, smali, baksmali or `jarsigner`.
+- AAB code that requires a newer API level than the pipeline's current smali setting.
+- An unwritable output directory, especially the default `/output` in source installations.
 - Applications protected by anti-repackaging or integrity checks.
 - Transformations applied to third-party libraries that should be ignored.
 - Obfuscator ordering issues.

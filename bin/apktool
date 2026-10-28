@@ -54,11 +54,8 @@ fi
 
 javaOpts=""
 
-# If you want DX to have more memory when executing, uncomment the following
-# line and adjust the value accordingly. Use "java -X" for a list of options
-# you can pass here.
-#
-javaOpts="-Xmx1024M -Dfile.encoding=utf-8 -Djdk.util.zip.disableZip64ExtraFieldValidation=true -Djdk.nio.zipfs.allowDotZipEntry=true"
+# Allow Apktool to use up to 4 GiB of Java heap when processing large APKs.
+javaOpts="-Xmx4g -Dfile.encoding=utf-8 -Djdk.util.zip.disableZip64ExtraFieldValidation=true -Djdk.nio.zipfs.allowDotZipEntry=true"
 
 # Alternatively, this will extract any parameter "-Jxxx" from the command line
 # and pass them to Java (instead of to dx). This makes it possible for you to
