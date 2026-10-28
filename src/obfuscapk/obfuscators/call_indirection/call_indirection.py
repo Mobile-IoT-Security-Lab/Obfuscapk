@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import logging
-import re
 from io import StringIO
 from typing import List, Set
 
@@ -12,14 +11,10 @@ from obfuscapk.obfuscation import Obfuscation
 
 class CallIndirection(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
         self.is_adding_methods = True
-
-        self.registers_pattern = re.compile(r"[vp]\d{1,3}")
 
     def is_range(self, invoke_type: str) -> bool:
         return "range" in invoke_type
@@ -27,11 +22,8 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
     def is_static(self, invoke_type: str) -> bool:
         return "static" in invoke_type
 
-    def get_registers(self, invoke_pass: str) -> List[str]:
-        return self.registers_pattern.findall(invoke_pass)
-
-    def get_register_range_count(self, register_list: List[str]) -> int:
-        return int(register_list[1][1:]) - int(register_list[0][1:]) + 1
+    def is_super(self, invoke_type: str) -> bool:
+        return "super" in invoke_type
 
     def is_void(self, invoke_return: str) -> bool:
         return invoke_return == "V"
@@ -49,8 +41,8 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
     def get_wrapper_method_name(
         self, invoke_object: str, invoke_method: str, invoke_param: str
     ) -> str:
-        signature = "{0}{1}{2}".format(invoke_object, invoke_method, invoke_param)
-        return "m{0}".format(util.get_string_md5(signature)[:8])
+        signature = f"{invoke_object}{invoke_method}{invoke_param}"
+        return f"m{util.get_string_md5(signature)[:8]}"
 
     def change_method_call(
         self,
@@ -74,11 +66,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         is_range_invocation = self.is_range(invoke_type)
         is_static_invocation = self.is_static(invoke_type)
 
-        register_list = self.get_registers(invoke_pass)
-        if is_range_invocation:
-            register_count = self.get_register_range_count(register_list)
-        else:
-            register_count = len(register_list)
+        register_count = len(util.get_invoke_registers(invoke_pass))
 
         is_void_value = self.is_void(invoke_return)
         is_wide_value = self.is_wide(invoke_return)
@@ -111,20 +99,12 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
         # Insert the new method invocation in the smali file.
         out_file.write(
-            "\t{invoke_type} {{{invoke_pass}}}, {class_name}->"
-            "{method_name}({add_param}{invoke_param}){invoke_return}\n".format(
-                invoke_type=new_invoke,
-                invoke_pass=invoke_pass,
-                class_name=class_name,
-                method_name=new_method_name,
-                add_param=add_param,
-                invoke_param=invoke_param,
-                invoke_return=invoke_return,
-            )
+            f"\t{new_invoke} {{{invoke_pass}}},"
+            f" {class_name}->{new_method_name}({add_param}{invoke_param}){invoke_return}\n"
         )
 
-        wrapper_key = "{0}->{1}({2}{3}){4}".format(
-            class_name, new_method_name, add_param, invoke_param, invoke_return
+        wrapper_key = (
+            f"{class_name}->{new_method_name}({add_param}{invoke_param}){invoke_return}"
         )
 
         if wrapper_key in generated_wrappers:
@@ -134,39 +114,24 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
         # Prepare the new method(s) declaration (will be inserted later into code).
         new_method.write(
-            ".method public static "
-            "{method_name}({add_param}{invoke_param}){invoke_return}\n".format(
-                method_name=new_method_name,
-                add_param=add_param,
-                invoke_param=invoke_param,
-                invoke_return=invoke_return,
-            )
+            ".method public static"
+            f" {new_method_name}({add_param}{invoke_param}){invoke_return}\n"
         )
-        new_method.write(
-            "    .locals {local_count}\n\n".format(local_count=local_register_count)
-        )
-        new_method.write("    {invoke_type} {{".format(invoke_type=invoke_type))
+        new_method.write(f"    .locals {local_register_count}\n\n")
+        new_method.write(f"    {invoke_type} {{")
         if is_range_invocation:
-            new_method.write("p0 .. p{count}".format(count=(register_count - 1)))
+            new_method.write(f"p0 .. p{register_count - 1}")
         else:
             for index in range(0, register_count):
-                new_method.write("p{count}".format(count=index))
+                new_method.write(f"p{index}")
                 if index + 1 < register_count:
                     new_method.write(", ")
         new_method.write(
-            "}}, {invoke_object}->"
-            "{invoke_method}({invoke_param}){invoke_return}\n\n".format(
-                invoke_object=invoke_object,
-                invoke_method=invoke_method,
-                invoke_param=invoke_param,
-                invoke_return=invoke_return,
-            )
+            f"}}, {invoke_object}->{invoke_method}({invoke_param}){invoke_return}\n\n"
         )
         if move_result_str:
-            new_method.write(
-                "    {move_result}\n\n".format(move_result=move_result_str)
-            )
-        new_method.write("    {return_result}\n".format(return_result=return_str))
+            new_method.write(f"    {move_result_str}\n\n")
+        new_method.write(f"    {return_str}\n")
         new_method.write(".end method\n\n")
 
         return True
@@ -196,6 +161,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
                 if invoke_match:
                     if (
                         not self.is_init(invoke_match.group("invoke_method"))
+                        and not self.is_super(invoke_match.group("invoke_type"))
                         and (added_methods + new_methods_count) < max_methods_to_add
                     ):
                         # The following function will write into the file the new
@@ -222,14 +188,25 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
         return new_methods_count
 
     def add_method(self, smali_file: str, new_method: StringIO):
+        new_method_code = new_method.getvalue()
+        if not new_method_code:
+            return
+
+        method_added = False
+
         with util.inplace_edit_file(smali_file) as (in_file, out_file):
             for line in in_file:
                 if line.startswith("# direct methods"):
                     # Add the new indirection method(s) in the direct methods section.
                     out_file.write(line)
-                    out_file.write(new_method.getvalue())
+                    out_file.write(new_method_code)
+                    method_added = True
                 else:
                     out_file.write(line)
+
+            if not method_added:
+                out_file.write("\n")
+                out_file.write(new_method_code)
 
     def add_call_indirections(
         self, smali_files: List[str], max_methods_to_add: int, interactive: bool = False
@@ -242,9 +219,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
             interactive=interactive,
             description="Inserting call indirections in smali files",
         ):
-            self.logger.debug(
-                'Inserting call indirections in file "{0}"'.format(smali_file)
-            )
+            self.logger.debug(f'Inserting call indirections in file "{smali_file}"')
             if added_methods < max_methods_to_add:
                 with StringIO() as new_method:
                     new_count = self.update_method(
@@ -259,10 +234,10 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
             else:
                 break
 
-        self.logger.debug("{0} new methods were added".format(added_methods))
+        self.logger.debug(f"{added_methods} new methods were added")
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             # There is a method limit for dex files.
@@ -294,9 +269,7 @@ class CallIndirection(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

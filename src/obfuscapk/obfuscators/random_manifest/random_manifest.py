@@ -10,10 +10,13 @@ from obfuscapk.obfuscation import Obfuscation
 
 
 class RandomManifest(obfuscator_category.IResourcesObfuscator):
+    android_name_attribute = "{http://schemas.android.com/apk/res/android}name"
+    android_target_activity_attribute = (
+        "{http://schemas.android.com/apk/res/android}targetActivity"
+    )
+
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
     # http://effbot.org/zone/element-lib.htm#prettyprint
@@ -96,8 +99,38 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
             element.append(child)
             self.scramble_xml_element(child)
 
+    def fix_activity_alias_order(self, manifest_root: Element):
+        for application in manifest_root.findall("application"):
+            children = list(application)
+
+            for alias in list(children):
+                if alias.tag != "activity-alias":
+                    continue
+
+                target = alias.get(self.android_target_activity_attribute)
+                target_activity = next(
+                    (
+                        child
+                        for child in children
+                        if child.tag == "activity"
+                        and child.get(self.android_name_attribute) == target
+                    ),
+                    None,
+                )
+
+                if target_activity is not None and children.index(
+                    alias
+                ) < children.index(target_activity):
+                    children.remove(alias)
+                    children.insert(children.index(target_activity) + 1, alias)
+
+            for child in list(application):
+                application.remove(child)
+            for child in children:
+                application.append(child)
+
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             # Change default namespace.
@@ -112,6 +145,7 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
             manifest_root = manifest_tree.getroot()
             self.remove_xml_duplicates(manifest_root)
             self.scramble_xml_element(manifest_root)
+            self.fix_activity_alias_order(manifest_root)
             self.indent_xml(manifest_root)
 
             # Write the changes into the manifest file.
@@ -119,9 +153,7 @@ class RandomManifest(obfuscator_category.IResourcesObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

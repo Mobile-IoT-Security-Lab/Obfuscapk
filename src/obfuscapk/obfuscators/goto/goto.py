@@ -9,13 +9,11 @@ from obfuscapk.obfuscation import Obfuscation
 
 class Goto(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             for smali_file in util.show_list_progress(
@@ -24,10 +22,11 @@ class Goto(obfuscator_category.ICodeObfuscator):
                 description='Inserting "goto" instructions in smali files',
             ):
                 self.logger.debug(
-                    'Inserting "goto" instructions in file "{0}"'.format(smali_file)
+                    f'Inserting "goto" instructions in file "{smali_file}"'
                 )
                 with util.inplace_edit_file(smali_file) as (in_file, out_file):
                     editing_method = False
+                    inserted_entry_jump = False
                     for line in in_file:
                         if (
                             line.startswith(".method ")
@@ -41,11 +40,13 @@ class Goto(obfuscator_category.ICodeObfuscator):
                             # instruction of the method.
                             out_file.write(line)
                             editing_method = True
+                            inserted_entry_jump = False
 
                         elif editing_method and util.locals_pattern.search(line):
                             out_file.write(line)
                             out_file.write("\n\tgoto/32 :after_last_instruction\n\n")
                             out_file.write("\t:before_first_instruction\n")
+                            inserted_entry_jump = True
 
                         elif line.startswith(".end method") and editing_method:
                             # If at the end of the method, insert a label after the
@@ -54,19 +55,22 @@ class Goto(obfuscator_category.ICodeObfuscator):
                             # endless loop because the method will return at some point
                             # and the second "goto" won't be called again when the
                             # method finishes.
-                            out_file.write("\n\t:after_last_instruction\n\n")
-                            out_file.write("\tgoto/32 :before_first_instruction\n\n")
+                            # Only close a wrapper whose opening jump and label exist.
+                            if inserted_entry_jump:
+                                out_file.write("\n\t:after_last_instruction\n\n")
+                                out_file.write(
+                                    "\tgoto/32 :before_first_instruction\n\n"
+                                )
                             out_file.write(line)
                             editing_method = False
+                            inserted_entry_jump = False
 
                         else:
                             out_file.write(line)
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

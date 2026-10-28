@@ -192,6 +192,16 @@
     goto :goto_0
 .end method
 
+.method public static loadEncryptedLibrary(Ljava/lang/String;)V
+    .locals 1
+
+    const-class v0, Lcom/decryptassetmanager/DecryptAsset;
+
+    invoke-static {v0, p0}, Lcom/decryptassetmanager/DecryptAsset;->loadEncryptedLibrary(Ljava/lang/Class;Ljava/lang/String;)V
+
+    return-void
+.end method
+
 .method public static loadEncryptedLibrary(Ljava/lang/Class;Ljava/lang/String;)V
     .locals 6
 

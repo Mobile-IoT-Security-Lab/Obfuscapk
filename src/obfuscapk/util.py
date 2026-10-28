@@ -22,6 +22,7 @@ random.seed(random_seed)
 #                                Common regex patterns.                                #
 ########################################################################################
 
+
 def get_length_preserved_hash(identifier: str) -> str:
     if not identifier or len(identifier) <= 2:
         return identifier
@@ -56,8 +57,11 @@ class_pattern = re.compile(r"\s*\.class.+?(?P<class_name>\S+?;)", re.UNICODE)
 # .super <class_name;>  # Every class name ends with ;
 super_class_pattern = re.compile(r"\s*\.super\s(?P<class_name>\S+?;)", re.UNICODE)
 
-# .locals <number>
-locals_pattern = re.compile(r"\s+\.locals\s(?P<local_count>\d+)")
+# .implements <class_name;>  # Every class name ends with ;
+implements_pattern = re.compile(r"\s*\.implements\s(?P<class_name>\S+?;)", re.UNICODE)
+
+# .locals <number> or .registers <number>
+locals_pattern = re.compile(r"\s+\.(?:locals|registers)\s(?P<local_count>\d+)")
 
 # .field <other_optional_stuff> <field_name>:<field_type> <optional_initialization>
 field_pattern = re.compile(
@@ -78,6 +82,15 @@ annotation_method_pattern = re.compile(
     r"->(?P<method_name>\S+?)"
     r"\((?P<method_param>\S*?)\)"
     r"(?P<method_return>\S+)",
+    re.UNICODE,
+)
+
+# Method references used outside invoke instructions, for example method handles.
+method_reference_pattern = re.compile(
+    r"(?P<method_object>L[^;\s]+;)"
+    r"->(?P<method_name>[^\s(]+)"
+    r"\((?P<method_param>[^)\s]*)\)"
+    r"(?P<method_return>\[*[VZBSCIJFD]|\[*L[^;\s]+;)",
     re.UNICODE,
 )
 
@@ -102,14 +115,114 @@ invoke_pattern = re.compile(
     re.UNICODE,
 )
 
+# <spaces> move-result[-object|-wide] <register>
+move_result_pattern = re.compile(
+    r"\s*move-result(?:-object|-wide)?\s+" r"(?P<register>[vp]\d+)\s*(?:#.*)?$",
+    re.UNICODE,
+)
+
 # <spaces> const-string <register>, "<string>"  # This also matches const-string/jumbo
 const_string_pattern = re.compile(
     r"\s+const-string(/jumbo)?\s(?P<register>[vp0-9]+),\s" r'"(?P<string>.+)"',
     re.UNICODE,
 )
 
+# <spaces> const-class <register>, <class_name>
+const_class_pattern = re.compile(
+    r"\s+const-class\s(?P<register>[vp]\d+),\s*(?P<class_name>\S+)",
+    re.UNICODE,
+)
+
+# <spaces> const[/variant] <register>, <integer>
+const_int_pattern = re.compile(
+    r"\s+const(?:/\S+)?\s(?P<register>[vp]\d+),\s*"
+    r"(?P<value>-?(?:0x[0-9a-fA-F]+|\d+))"
+)
+
+# Create a java.lang.Class array using a size stored in another register.
+new_class_array_pattern = re.compile(
+    r"\s+new-array\s(?P<array>[vp]\d+),\s*(?P<size>[vp]\d+),\s*" r"\[Ljava/lang/Class;"
+)
+
+# Store an object in an array using registers for the value, array and index.
+array_put_object_pattern = re.compile(
+    r"\s+aput-object\s(?P<value>[vp]\d+),\s*(?P<array>[vp]\d+),\s*"
+    r"(?P<index>[vp]\d+)"
+)
+
+# Generic Smali instructions and registers used by lightweight code analysis.
+smali_register_pattern = re.compile(r"[vp]\d+")
+smali_move_pattern = re.compile(
+    r"\s+move(?:-object)?(?:/from16|/16)?\s+"
+    r"(?P<destination>[vp]\d+),\s*(?P<source>[vp]\d+)"
+)
+smali_instruction_pattern = re.compile(
+    r"\s*(?P<opcode>[a-z][\w/-]*)(?:\s+(?P<register>[vp]\d+))?"
+)
+
+# Fast regex patterns for extracting raw Dalvik descriptors used in DEX limit counting.
+
+# Matches class names in .class declarations, e.g. Lcom/example/MyClass;
+fast_class_pattern = re.compile(r"\.class[^\n]*\s+(L[^;\s]+;)", re.UNICODE)
+
+# Matches string values in const-string or const-string/jumbo
+fast_const_string_pattern = re.compile(
+    r'const-string(?:/jumbo)?\s+[vp0-9]+,\s*"(.*?)"', re.UNICODE
+)
+
+# Matches method references, e.g. Lcom/example/MyClass;->myMethod(I)V
+fast_invoke_pattern = re.compile(r"L[^;\s]+;->[^\(\s]+\([^\)\s]*\)[^\s]+", re.UNICODE)
+
+# Matches field references, e.g. Lcom/example/MyClass;->MY_FIELD:I
+fast_field_usage_pattern = re.compile(r"L[^;\s]+;->[^:\s]+:[^\s]+", re.UNICODE)
+
+# Matches method declarations (extracting the signature), e.g. myMethod(I)V
+fast_method_pattern = re.compile(
+    r"\.method[^\n]*\s+([^\s\()]+\([^\)]*\)[^\s]+)", re.UNICODE
+)
+
+# Matches field declarations (extracting the name and type), e.g. MY_FIELD:I
+fast_field_pattern = re.compile(r"\.field[^\n]*\s+([^:\s]+:[^\s=]+)", re.UNICODE)
+
 
 ########################################################################################
+
+
+def get_invoke_registers(invoke_pass: str) -> List[str]:
+    """Return every register passed by a normal or range invoke instruction."""
+    registers = smali_register_pattern.findall(invoke_pass)
+    if ".." not in invoke_pass or len(registers) != 2:
+        return registers
+
+    first, last = registers
+    if first[0] != last[0]:
+        return []
+    return [
+        f"{first[0]}{number}" for number in range(int(first[1:]), int(last[1:]) + 1)
+    ]
+
+
+def unescape_smali_string(value: str) -> str:
+    escapes = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r"}
+    result = []
+    index = 0
+    while index < len(value):
+        if value[index] != "\\" or index + 1 == len(value):
+            result.append(value[index])
+            index += 1
+            continue
+
+        escaped = value[index + 1]
+        if escaped == "u" and index + 5 < len(value):
+            try:
+                result.append(chr(int(value[index + 2 : index + 6], 16)))
+                index += 6
+                continue
+            except ValueError:
+                pass
+        result.append(escapes.get(escaped, escaped))
+        index += 2
+    return "".join(result)
 
 
 # When iterating over list L, "for element in show_list_progress(L, interactive=True)"
@@ -130,7 +243,9 @@ def show_list_progress(
             unit=unit,
             desc=description,
             mininterval=0.1,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+            bar_format=(
+                "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+            ),
         )
 
 
@@ -178,7 +293,7 @@ def inplace_edit_file(file_name: str):
     written data.
     """
 
-    backup_file_name = "{0}{1}{2}".format(file_name, os.extsep, "bak")
+    backup_file_name = f"{file_name}{os.extsep}bak"
 
     try:
         os.unlink(backup_file_name)
@@ -211,9 +326,7 @@ def inplace_edit_file(file_name: str):
             pass
         os.rename(backup_file_name, file_name)
 
-        logger.error(
-            'Error during inplace editing file "{0}": {1}'.format(file_name, e)
-        )
+        logger.error(f'Error during inplace editing file "{file_name}": {e}')
         raise
     finally:
         readable.close()
@@ -229,7 +342,7 @@ def get_text_from_file(file_name: str) -> str:
         with open(file_name, "r", encoding="utf-8") as file:
             return file.read()
     except Exception as e:
-        logger.error('Error during reading file "{0}": {1}'.format(file_name, e))
+        logger.error(f'Error during reading file "{file_name}": {e}')
         raise
 
 
@@ -239,7 +352,7 @@ def get_non_empty_lines_from_file(file_name: str) -> List[str]:
             # Return a list with the non blank lines contained in the file.
             return list(filter(None, (line.rstrip() for line in file)))
     except Exception as e:
-        logger.error('Error during reading file "{0}": {1}'.format(file_name, e))
+        logger.error(f'Error during reading file "{file_name}": {e}')
         raise
 
 

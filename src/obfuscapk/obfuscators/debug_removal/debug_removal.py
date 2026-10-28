@@ -10,13 +10,11 @@ from obfuscapk.obfuscation import Obfuscation
 
 class DebugRemoval(obfuscator_category.ICodeObfuscator):
     def __init__(self):
-        self.logger = logging.getLogger(
-            "{0}.{1}".format(__name__, self.__class__.__name__)
-        )
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         super().__init__()
 
     def obfuscate(self, obfuscation_info: Obfuscation):
-        self.logger.info('Running "{0}" obfuscator'.format(self.__class__.__name__))
+        self.logger.info(f'Running "{self.__class__.__name__}" obfuscator')
 
         try:
             debug_op_codes = [
@@ -38,7 +36,7 @@ class DebugRemoval(obfuscator_category.ICodeObfuscator):
                 description="Removing debug information",
             ):
                 self.logger.debug(
-                    'Removing debug information from file "{0}"'.format(smali_file)
+                    f'Removing debug information from file "{smali_file}"'
                 )
 
                 with open(smali_file, "r", encoding="utf-8") as current_file:
@@ -62,7 +60,7 @@ class DebugRemoval(obfuscator_category.ICodeObfuscator):
                             # comment).
                             param_match = param_pattern.match(line)
                             if param_match:
-                                line = "{0}\n".format(param_match.group())
+                                line = f"{param_match.group()}\n"
                             reversed_lines_to_keep.append(line)
                         elif not inside_param_declaration:
                             if not any(
@@ -77,9 +75,7 @@ class DebugRemoval(obfuscator_category.ICodeObfuscator):
 
         except Exception as e:
             self.logger.error(
-                'Error during execution of "{0}" obfuscator: {1}'.format(
-                    self.__class__.__name__, e
-                )
+                f'Error during execution of "{self.__class__.__name__}" obfuscator: {e}'
             )
             raise
 

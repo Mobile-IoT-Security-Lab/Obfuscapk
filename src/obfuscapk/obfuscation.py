@@ -5,11 +5,11 @@ import os
 import re
 import secrets
 import string
-from typing import List, Union, Set, Tuple
+from typing import List, Set, Tuple, Union
 
 from obfuscapk import util
-from obfuscapk.tool import Apktool, ApkSigner, Zipalign
-from obfuscapk.toolbundledecompiler import BundleDecompiler, AABSigner
+from obfuscapk.tool import ApkSigner, Apktool, Zipalign
+from obfuscapk.toolbundledecompiler import AABSigner, BundleDecompiler
 
 
 class Obfuscation(object):
@@ -32,7 +32,6 @@ class Obfuscation(object):
         key_alias: str = None,
         key_password: str = None,
         ignore_packages_file: str = None,
-        use_aapt2: bool = False,
     ):
         self.logger = logging.getLogger(__name__)
 
@@ -47,7 +46,6 @@ class Obfuscation(object):
         self.key_alias: str = key_alias
         self.key_password: str = key_password
         self.ignore_packages_file: str = ignore_packages_file
-        self.use_aapt2 = use_aapt2
         if apk_path.endswith("aab"):
             self.is_bundle = True
         else:
@@ -58,9 +56,8 @@ class Obfuscation(object):
             secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
         )
         self.logger.debug(
-            'Auto-generated random secret key for encryption: "{0}"'.format(
-                self.encryption_secret
-            )
+            "Auto-generated random secret key for encryption:"
+            f' "{self.encryption_secret}"'
         )
 
         # The list of obfuscators already used on the application.
@@ -87,13 +84,15 @@ class Obfuscation(object):
         self._smali_files: List[str] = []
         self._all_smali_files: List[str] = []
         self._multidex_smali_files: List[List[str]] = []  # A list for each dex file.
-        self._all_multidex_smali_files: List[List[str]] = []  # A list for each dex file.
+        self._all_multidex_smali_files: List[List[str]] = (
+            []
+        )  # A list for each dex file.
         self._native_lib_files: List[str] = []
 
         # Check if the apk file to obfuscate is a valid file.
         if not os.path.isfile(self.apk_path):
-            self.logger.error('Unable to find file "{0}"'.format(self.apk_path))
-            raise FileNotFoundError('Unable to find file "{0}"'.format(self.apk_path))
+            self.logger.error(f'Unable to find file "{self.apk_path}"')
+            raise FileNotFoundError(f'Unable to find file "{self.apk_path}"')
 
         # If no working directory is specified, use a new directory in the same
         # directory as the apk file to obfuscate.
@@ -102,10 +101,9 @@ class Obfuscation(object):
                 os.path.dirname(self.apk_path), "obfuscation_working_dir"
             )
             self.logger.debug(
-                "No working directory provided, the operations will take place in the "
-                'same directory as the input file, in the directory "{0}"'.format(
-                    self.working_dir_path
-                )
+                "No working directory provided, the operations will take place in the"
+                " same directory as the input file, in the directory"
+                f' "{self.working_dir_path}"'
             )
 
         if not os.path.isdir(self.working_dir_path):
@@ -113,9 +111,7 @@ class Obfuscation(object):
                 os.makedirs(self.working_dir_path, exist_ok=True)
             except Exception as e:
                 self.logger.error(
-                    'Unable to create working directory "{0}": {1}'.format(
-                        self.working_dir_path, e
-                    )
+                    f'Unable to create working directory "{self.working_dir_path}": {e}'
                 )
                 raise
 
@@ -123,22 +119,18 @@ class Obfuscation(object):
         # working directory.
         if not self.obfuscated_apk_path:
             if self.is_bundle:
-                self.obfuscated_apk_path = "{0}_obfuscated.aab".format(
-                    os.path.join(
-                        self.working_dir_path,
-                        os.path.splitext(os.path.basename(self.apk_path))[0],
-                    )
+                self.obfuscated_apk_path = (
+                    f"{os.path.join(self.working_dir_path, os.path.splitext(os.path.basename(self.apk_path))[0])}"
+                    f"_obfuscated.aab"
                 )
             else:
-                self.obfuscated_apk_path = "{0}_obfuscated.apk".format(
-                    os.path.join(
-                        self.working_dir_path,
-                        os.path.splitext(os.path.basename(self.apk_path))[0],
-                    )
+                self.obfuscated_apk_path = (
+                    f"{os.path.join(self.working_dir_path, os.path.splitext(os.path.basename(self.apk_path))[0])}"
+                    f"_obfuscated.apk"
                 )
             self.logger.debug(
-                "No obfuscated apk path provided, the result will be saved "
-                'as "{0}"'.format(self.obfuscated_apk_path)
+                "No obfuscated apk path provided, the result will be saved as"
+                f' "{self.obfuscated_apk_path}"'
             )
 
     def _get_total_fields(self) -> Union[int, List[int]]:
@@ -173,20 +165,19 @@ class Obfuscation(object):
                         # Field declared in class.
                         field_match = util.field_pattern.search(line)
                         if field_match:
-                            field = "{class_name}->{field_name}:{field_type}".format(
-                                class_name=class_name,
-                                field_name=field_match.group("field_name"),
-                                field_type=field_match.group("field_type"),
+                            field = (
+                                f"{class_name}->{field_match.group('field_name')}:"
+                                f"{field_match.group('field_type')}"
                             )
                             total_fields.add(field)
 
                         # Field usage.
                         field_usage_match = util.field_usage_pattern.search(line)
                         if field_usage_match:
-                            field = "{class_name}->{field_name}:{field_type}".format(
-                                class_name=field_usage_match.group("field_object"),
-                                field_name=field_usage_match.group("field_name"),
-                                field_type=field_usage_match.group("field_type"),
+                            field = (
+                                f"{field_usage_match.group('field_object')}->"
+                                f"{field_usage_match.group('field_name')}:"
+                                f"{field_usage_match.group('field_type')}"
                             )
                             total_fields.add(field)
 
@@ -234,21 +225,10 @@ class Obfuscation(object):
                         )
                         if annotation_method_match:
                             method = (
-                                "{class_name}->"
-                                "{method_name}({method_param}){method_return}".format(
-                                    class_name=annotation_method_match.group(
-                                        "method_object"
-                                    ),
-                                    method_name=annotation_method_match.group(
-                                        "method_name"
-                                    ),
-                                    method_param=annotation_method_match.group(
-                                        "method_param"
-                                    ),
-                                    method_return=annotation_method_match.group(
-                                        "method_return"
-                                    ),
-                                )
+                                f"{annotation_method_match.group('method_object')}->"
+                                f"{annotation_method_match.group('method_name')}("
+                                f"{annotation_method_match.group('method_param')})"
+                                f"{annotation_method_match.group('method_return')}"
                             )
                             total_methods.add(method)
 
@@ -256,13 +236,9 @@ class Obfuscation(object):
                         method_match = util.method_pattern.search(line)
                         if method_match:
                             method = (
-                                "{class_name}->"
-                                "{method_name}({method_param}){method_return}".format(
-                                    class_name=class_name,
-                                    method_name=method_match.group("method_name"),
-                                    method_param=method_match.group("method_param"),
-                                    method_return=method_match.group("method_return"),
-                                )
+                                f"{class_name}->{method_match.group('method_name')}("
+                                f"{method_match.group('method_param')})"
+                                f"{method_match.group('method_return')}"
                             )
                             total_methods.add(method)
 
@@ -270,13 +246,10 @@ class Obfuscation(object):
                         invoke_match = util.invoke_pattern.search(line)
                         if invoke_match:
                             method = (
-                                "{class_name}->"
-                                "{method_name}({method_param}){method_return}".format(
-                                    class_name=invoke_match.group("invoke_object"),
-                                    method_name=invoke_match.group("invoke_method"),
-                                    method_param=invoke_match.group("invoke_param"),
-                                    method_return=invoke_match.group("invoke_return"),
-                                )
+                                f"{invoke_match.group('invoke_object')}->"
+                                f"{invoke_match.group('invoke_method')}("
+                                f"{invoke_match.group('invoke_param')})"
+                                f"{invoke_match.group('invoke_return')}"
                             )
                             total_methods.add(method)
 
@@ -345,7 +318,7 @@ class Obfuscation(object):
             try:
                 if self.is_bundle:
                     bundledecompiler.decode(
-                        self.apk_path, self._decoded_apk_path, force=False
+                        self.apk_path, self._decoded_apk_path, force=True
                     )
                 else:
                     apktool.decode(self.apk_path, self._decoded_apk_path, force=True)
@@ -357,22 +330,13 @@ class Obfuscation(object):
                     if file_name.endswith(".smali")
                 ]
                 self._smali_files = list(self._all_smali_files)
-                
+
                 self.strip_debug_info()
 
                 # Path to the decoded manifest file.
-                if self.is_bundle:
-                    self._manifest_file = os.path.join(
-                        self._decoded_apk_path,
-                        "base",
-                        "manifest",
-                        "AndroidManifest.xml",
-                    )
-                else:
-                    self._manifest_file = os.path.join(
-                        self._decoded_apk_path, "AndroidManifest.xml"
-                    )
-
+                self._manifest_file = os.path.join(
+                    self._decoded_apk_path, "AndroidManifest.xml"
+                )
 
                 if self.ignore_libs:
                     # Normalize paths for the current OS ('.join(x, "")' is used to add
@@ -410,10 +374,7 @@ class Obfuscation(object):
                 self._smali_files.sort()
 
                 # Check if multidex.
-                if self.is_bundle:
-                    smali_root = os.path.join(self._decoded_apk_path, "base", "dex")
-                else:
-                    smali_root = self._decoded_apk_path
+                smali_root = self._decoded_apk_path
 
                 smali_directories = []
                 if os.path.isdir(smali_root):
@@ -440,32 +401,23 @@ class Obfuscation(object):
 
                 if self._is_multidex:
                     for smali_directory in smali_directories:
-                        if self.is_bundle:
-                            current_directory = os.path.join(
-                                self._decoded_apk_path,
-                                "base",
-                                "dex",
-                                smali_directory,
-                                "",
-                            )
-                        else:
-                            current_directory = os.path.join(
-                                self._decoded_apk_path, smali_directory, ""
-                            )
-                            self._all_multidex_smali_files.append(
-                                [
-                                    smali_file
-                                    for smali_file in self._all_smali_files
-                                    if smali_file.startswith(current_directory)
-                                ]
-                            )
-                            self._multidex_smali_files.append(
-                                [
-                                    smali_file
-                                    for smali_file in self._smali_files
-                                    if smali_file.startswith(current_directory)
-                                ]
-                            )
+                        current_directory = os.path.join(
+                            self._decoded_apk_path, smali_directory, ""
+                        )
+                        self._all_multidex_smali_files.append(
+                            [
+                                smali_file
+                                for smali_file in self._all_smali_files
+                                if smali_file.startswith(current_directory)
+                            ]
+                        )
+                        self._multidex_smali_files.append(
+                            [
+                                smali_file
+                                for smali_file in self._smali_files
+                                if smali_file.startswith(current_directory)
+                            ]
+                        )
 
                 # A list containing the paths to the native libraries included in the
                 # application.
@@ -483,7 +435,7 @@ class Obfuscation(object):
                 self._native_lib_files.sort()
 
             except Exception as e:
-                self.logger.error("Error during apk decoding: {0}".format(e))
+                self.logger.error(f"Error during apk decoding: {e}")
                 raise
             else:
                 self._is_decoded = True
@@ -568,9 +520,14 @@ class Obfuscation(object):
         ):
             needs_stripping = False
             try:
-                with open(smali_file, "r", encoding="utf-8", errors="ignore") as in_file:
+                with open(
+                    smali_file, "r", encoding="utf-8", errors="ignore"
+                ) as in_file:
                     for line in in_file:
-                        if any(op in line for op in debug_op_codes) or ".param " in line:
+                        if (
+                            any(op in line for op in debug_op_codes)
+                            or ".param " in line
+                        ):
                             needs_stripping = True
                             break
             except Exception:
@@ -586,94 +543,149 @@ class Obfuscation(object):
                     if line.strip().startswith(".param "):
                         match = param_pattern.match(line)
                         if match:
-                            out_file.write("{0}\n".format(match.group()))
+                            out_file.write(f"{match.group()}\n")
                             continue
                     out_file.write(line)
 
     def repartition_smali(self, target_limit: int = 60000) -> None:
         """
-        Re-distributes Smali files into smali, smali_classes2, etc. to avoid DEX limits.
+        Re-distributes Smali files into smali, smali_classes2, etc. to avoid DEX limits
+        by counting unique strings, methods, and fields.
         """
         self.logger.info("Re-partitioning Smali files to ensure DEX limits...")
-        
-        # 1. Discover all Smali files and their method counts.
+
+        # 1. Discover all Smali files
         all_files = []
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)
             parts = rel_to_decoded.split(os.path.sep)
-            if parts[0] == "smali" or (parts[0].startswith("smali_classes") and parts[0][len("smali_classes"):].isdigit()):
+
+            smali_dir_name = parts[0]
+
+            if smali_dir_name == "smali" or (
+                smali_dir_name.startswith("smali_classes")
+                and smali_dir_name[len("smali_classes") :].isdigit()
+            ):
                 for f in files:
                     if f.endswith(".smali"):
                         all_files.append(os.path.join(root, f))
-        
+
         if not all_files:
             return
 
-        # 2. Group files by their relative path (preserving package structure).
-        # Also count methods in each file.
+        # 2. Group files by their relative path (preserving package structure) and extract symbols.
         file_data = []
         for f in util.show_list_progress(
             all_files,
             interactive=self.interactive,
             description="Analyzing DEX partitions",
         ):
-            # Find which smali root this belongs to.
             rel_path = None
             parts = os.path.relpath(f, self._decoded_apk_path).split(os.path.sep)
-            # parts is something like ['smali_classes3', 'com', 'example', 'File.smali']
             rel_path = os.path.join(*parts[1:])
-            
-            method_count = 0
+
+            strings = set()
+            methods = set()
+            fields = set()
             try:
                 with open(f, "r", encoding="utf-8", errors="ignore") as reader:
-                    for line in reader:
-                        if util.method_pattern.search(line):
-                            method_count += 1
+                    content = reader.read()
+
+                    cls_match = util.fast_class_pattern.search(content)
+                    if cls_match:
+                        cls_name = cls_match.group(1)
+                        methods.update(
+                            cls_name + "->" + m
+                            for m in util.fast_method_pattern.findall(content)
+                        )
+                        fields.update(
+                            cls_name + "->" + f
+                            for f in util.fast_field_pattern.findall(content)
+                        )
+
+                    strings.update(util.fast_const_string_pattern.findall(content))
+                    methods.update(util.fast_invoke_pattern.findall(content))
+                    fields.update(util.fast_field_usage_pattern.findall(content))
             except Exception:
                 pass
-            file_data.append({"abs": f, "rel": rel_path, "methods": method_count})
+            file_data.append(
+                {
+                    "abs": f,
+                    "rel": rel_path,
+                    "strings": strings,
+                    "methods": methods,
+                    "fields": fields,
+                }
+            )
 
         # 3. Redistribute.
         current_dex_index = 1
-        current_dex_methods = 0
-        
+        current_strings = set()
+        current_methods = set()
+        current_fields = set()
+
         for item in file_data:
-            if current_dex_methods + item["methods"] > target_limit:
+            if (
+                (
+                    len(current_strings) + len(item["strings"]) > target_limit
+                    and len(current_strings | item["strings"]) > target_limit
+                )
+                or (
+                    len(current_methods) + len(item["methods"]) > target_limit
+                    and len(current_methods | item["methods"]) > target_limit
+                )
+                or (
+                    len(current_fields) + len(item["fields"]) > target_limit
+                    and len(current_fields | item["fields"]) > target_limit
+                )
+            ):
                 current_dex_index += 1
-                current_dex_methods = 0
-            
-            target_folder = "smali" if current_dex_index == 1 else "smali_classes{0}".format(current_dex_index)
-            target_path = os.path.join(self._decoded_apk_path, target_folder, item["rel"])
-            
+                current_strings = set()
+                current_methods = set()
+                current_fields = set()
+
+            target_folder = (
+                "smali"
+                if current_dex_index == 1
+                else f"smali_classes{current_dex_index}"
+            )
+            target_path = os.path.join(
+                self._decoded_apk_path, target_folder, item["rel"]
+            )
+
             if item["abs"] != target_path:
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 os.rename(item["abs"], target_path)
-            
-            current_dex_methods += item["methods"]
+
+            current_strings.update(item["strings"])
+            current_methods.update(item["methods"])
+            current_fields.update(item["fields"])
 
         # 4. Clean up empty smali folders.
         for i in range(1, 200):
-            folder_name = "smali" if i == 1 else "smali_classes{0}".format(i)
+            folder_name = "smali" if i == 1 else f"smali_classes{i}"
             folder_path = os.path.join(self._decoded_apk_path, folder_name)
             if os.path.isdir(folder_path):
-                # Remove if empty.
                 for root, dirs, files in os.walk(folder_path, topdown=False):
                     if not files and not dirs:
                         os.rmdir(root)
             else:
                 if i > 50:
                     break
-        
-        # Refresh the internal file lists after moving things around.
+
         self._all_smali_files = []
         for root, _, files in os.walk(self._decoded_apk_path):
             rel_to_decoded = os.path.relpath(root, self._decoded_apk_path)
             parts = rel_to_decoded.split(os.path.sep)
-            if parts[0] == "smali" or (parts[0].startswith("smali_classes") and parts[0][len("smali_classes"):].isdigit()):
+            smali_dir_name = parts[0]
+            if smali_dir_name == "smali" or (
+                smali_dir_name.startswith("smali_classes")
+                and smali_dir_name[len("smali_classes") :].isdigit()
+            ):
                 for f in files:
                     if f.endswith(".smali"):
                         self._all_smali_files.append(os.path.join(root, f))
-        
+
         self._all_smali_files.sort()
         self._smali_files = list(self._all_smali_files)
         self._is_multidex = current_dex_index > 1
@@ -682,7 +694,8 @@ class Obfuscation(object):
         if not self._is_decoded:
             self.decode_apk()
 
-        self.repartition_smali(target_limit=35000)
+        if self.obfuscators_adding_methods > 0 or self.obfuscators_adding_fields > 0:
+            self.repartition_smali(target_limit=10000)
 
         # The obfuscated apk will be built with apktool or BundleDecompiler.
         apktool: Apktool = Apktool()
@@ -692,11 +705,9 @@ class Obfuscation(object):
             if self.is_bundle:
                 bundledecompiler.build(self._decoded_apk_path, self.obfuscated_apk_path)
             else:
-                apktool.build(
-                    self._decoded_apk_path, self.obfuscated_apk_path, self.use_aapt2
-                )
+                apktool.build(self._decoded_apk_path, self.obfuscated_apk_path)
         except Exception as e:
-            self.logger.error("Error during apk building: {0}".format(e))
+            self.logger.error(f"Error during apk building: {e}")
             raise
 
     def sign_obfuscated_apk(self) -> None:
@@ -718,10 +729,10 @@ class Obfuscation(object):
         else:
             if not os.path.isfile(self.keystore_file):
                 self.logger.error(
-                    'Unable to find keystore file "{0}"'.format(self.keystore_file)
+                    f'Unable to find keystore file "{self.keystore_file}"'
                 )
                 raise FileNotFoundError(
-                    'Unable to find keystore file "{0}"'.format(self.keystore_file)
+                    f'Unable to find keystore file "{self.keystore_file}"'
                 )
             if not self.keystore_password or not self.key_alias:
                 raise ValueError(
@@ -733,6 +744,10 @@ class Obfuscation(object):
             if self.is_bundle:
                 aabsigner.sign(
                     self.obfuscated_apk_path,
+                    self.keystore_file,
+                    self.keystore_password,
+                    self.key_alias,
+                    self.key_password,
                 )
             else:
                 apksigner.resign(
@@ -743,7 +758,7 @@ class Obfuscation(object):
                     self.key_password,
                 )
         except Exception as e:
-            self.logger.error("Error during apk signing: {0}".format(e))
+            self.logger.error(f"Error during apk signing: {e}")
             raise
 
     def align_obfuscated_apk(self) -> None:
@@ -757,7 +772,7 @@ class Obfuscation(object):
         try:
             zipalign.align(self.obfuscated_apk_path)
         except Exception as e:
-            self.logger.error("Error during apk alignment: {0}".format(e))
+            self.logger.error(f"Error during apk alignment: {e}")
             raise
 
     def is_multidex(self) -> bool:
@@ -777,6 +792,12 @@ class Obfuscation(object):
             self.decode_apk()
 
         return self._smali_files
+
+    def get_all_smali_files(self) -> List[str]:
+        if not self._is_decoded:
+            self.decode_apk()
+
+        return self._all_smali_files
 
     def get_multidex_smali_files(self) -> List[List[str]]:
         if not self._is_decoded:
@@ -819,7 +840,7 @@ class Obfuscation(object):
 
         # Normalize package names into smali format.
         for item in util.get_non_empty_lines_from_file(self.ignore_packages_file):
-            ignore_package_list.append("L{0}".format(item).replace(".", "/"))
+            ignore_package_list.append(f"L{item}".replace(".", "/"))
 
         return ignore_package_list
 
